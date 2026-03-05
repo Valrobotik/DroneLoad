@@ -27,9 +27,9 @@ if input("Default : Def_in: {1}x{2}, FPS_in: {3}, Colors_in: {4} \n Stream: {5},
 
 
 if Stream=="F" or Stream=="f":
-    streamer = VideoFStreamer(width=Width, height=Height, fps_input=FPS_input, colors_input=Colors_input,stream=Stream, fps_output=FPS_ouput, colors_output=Colors_ouput)
+    streamer = VideoFStreamer(width=Width, height=Height, fps_input=FPS_input, colors_input=Colors_input,stream=Stream, fps_output=FPS_output, colors_output=Colors_output)
 else:
-    streamer = VideoGStreamer(width=Width, height=Height, fps_input=FPS_input, colors_input=Colors_input,stream=Stream, fps_output=FPS_ouput, colors_output=Colors_ouput)
+    streamer = VideoGStreamer(width=Width, height=Height, fps_input=FPS_input, colors_input=Colors_input,stream=Stream, fps_output=FPS_output, colors_output=Colors_output)
 
 print("Traitement démarré... ctrl+C pour stopper")
 
