@@ -24,12 +24,12 @@ class VideoGStreamer:
 
 
         #Camera raspberry :
-        f"""
+
         gst_in = (
             f"libcamerasrc ! "
             f"video/x-raw,width={self.width},height={self.height},framerate={self.fps_input}/1 ! " #format=GRAY8 #niveaux de gris (ici si camera isc)
             f"videoconvert ! " # ou v4l2convert
-            f"video/x-raw,format=BGR ! "        #format=GRAY8 #niveaux de gris
+            f"video/x-raw,format=GRAY8 ! "        #format=GRAY8 #niveaux de gris BGR
             f"appsink drop=true"
         )
         """
@@ -39,6 +39,7 @@ class VideoGStreamer:
             f"jpegdec ! "        #v4l2jpegdec #à tester, version matérielle
             f"videoconvert ! video/x-raw,format=GRAY8 ! appsink drop=true"
         )
+        """
         self.out = None
         if self.streaming_active:
             gst_out = (
