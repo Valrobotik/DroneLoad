@@ -3,6 +3,7 @@ import time
 import sys
 from gstream import VideoGStreamer
 from flaskstream import VideoFStreamer
+from opencv import OpenCV
 
 Width=1280
 Height=720
@@ -37,6 +38,8 @@ prev_time = time.time()
 frame_count = 0
 fps=0
 
+cv = OpenCV() #Added
+
 try:
     while True:
         ret, frame = streamer.read()
@@ -46,15 +49,15 @@ try:
         #frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)        #conversion niveaux de gris
         frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
 
-        # --- DÉBUT DU TRAITEMENT OPENCV ---
-        # Exemple simple : Détection de visages ou dessin
+        # --- TRAITEMENT OPENCV ---
+        cv.Aruco(frame, fps) #added
+        """
         cv2.putText(frame, f"Pi4 - Detection Active - FPS {fps}",
                     (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-        # Insérez votre modèle de détection ici (YOLO, Haar, etc.)
         # --- FIN DU TRAITEMENT OPENCV ---
-
-        # Envoi vers le pipeline de streaming
+        """
+        # Streaming
         if Stream!="N" or "n":
             streamer.send(frame)
 
