@@ -2,6 +2,7 @@ import cv2
 
 class OpenCV:
     def __init__(slef):
+        None
 
     def Aruco(self, frame, fps):
         self.frame = frame
