@@ -9,7 +9,7 @@ from typing import Optional
 def calibrate_camera(
         images_folder: str,
         chessboard_size: tuple = (9, 6),
-        square_size_mm: float = 25.0
+        square_size_mm: float = 27.0
 ) -> Optional[np.ndarray]:
     """
     Calibre la caméra à partir de photos d'un damier.
