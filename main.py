@@ -56,8 +56,7 @@ def main():
 
     mqtt.log_to_pc("Système prêt. En attente de commandes...")
 
-    t = 0               #thiaw
-    nbre_frame = 0      #thiaw
+    init_detection = True
 
     # 3. Boucle Principale
     while True:
@@ -80,9 +79,11 @@ def main():
         # C. Logique de vol
         if mqtt.current_mode == "epreuve1" and mqtt.target_class is not None: #is not None ????????
             #run_epreuve1(drone, hw, arucos_data, video.width)
-            if nbre_frame > 50:                                                         #thiaw
-                t = 0                                                                   #thiaw
-            t = epreuve1_task.run(drone, hw, arucos_data, video.width, video.height, frame, mqtt.target_class, t)      #thiaw
+            if init_detection:
+                epreuve1_task.tps=time.time()
+                init_detection = False
+            if epreuve1_task.run(drone, hw, arucos_data, video.width, video.height, frame, mqtt.target_class):
+                hw.servo_1_down()                       #1 ou 2 ????????????
 
         elif mqtt.current_mode == "epreuve2":
             # On passe les données de YOLO
@@ -104,11 +105,11 @@ def main():
 
         if mqtt.hook_action == "hook_open":
             print("[MAIN] Appel de la fonction d'ouverture du crochet...")
-            # TODO: Fonction ouverture (ex: hw.set_hook(True))
+            hw.servo_1_down()                   #1 ou 2 ????????????
 
         elif mqtt.hook_action == "hook_close":
             print("[MAIN] Appel de la fonction de fermeture du crochet...")
-            # TODO: Fonction fermeture (ex: hw.set_hook(False))
+            hw.servo_1_up()                     #1 ou 2 ????????????
 
 
 

@@ -69,7 +69,10 @@ class Epreuve1Task:
         self.takeoff_done = False
 
         self.modell = modell
-        self.last_time = time.time()
+
+        self.tps = time.time()
+        self.fps=0
+        self.t=0
 
     def is_only_class_detected(self , frame, target_class: str,confidence_threshold: float = 0.5) -> bool:
 
@@ -92,11 +95,14 @@ class Epreuve1Task:
         # Vérifie que target_class est présente ET que c'est la SEULE classe
         return detected_classes == {target_class}
 
-    def run(self, drone, hw, arucos_data, frame_width, frame_height, frame,classe, t):
-
+    def run(self, drone, hw, arucos_data, frame_width, frame_height, frame,classe):
         if self.is_only_class_detected(frame, classe, 0.5):
-            t = t +1
-        if t >= 25:
-            self.controle_servo(0)
-            return 0
-        return t
+            self.t+=1
+        self.fps+=1
+        if time.time()-self.tps>=2:
+            if self.t >= self.fps*0.8:
+                return True
+            self.tps=time.time()
+            self.t=0
+            self.tps=0
+        return False
