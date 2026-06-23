@@ -13,6 +13,7 @@ class MqttManager:
 
         # Variables d'état
         self.current_mode = "attente"
+        self.hook_action = None
         self.black_bg = False
 
         # Pour les statistiques
@@ -72,6 +73,9 @@ class MqttManager:
             if action == "set_mode":
                 self.current_mode = data.get("mode")
                 self.log_to_pc(f"Mode changé : {self.current_mode}")
+            elif action == "set_hook":
+                self.hook_action = data.get("state")
+                self.log_to_pc(f"Action crochet demandée : {self.hook_action}")
             elif action == "video_bg":
                 self.black_bg = data.get("black", False)
                 self.log_to_pc(f"Vidéo fond noir : {self.black_bg}")

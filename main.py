@@ -78,10 +78,29 @@ def main():
             # On passe les données de YOLO
             run_epreuve2(drone, hw, yolo_data, video.width)
 
+        elif mqtt.current_mode == "takeoff":
+            print("[MAIN] Appel de la fonction de décollage...")
+            # TODO: Mettre votre fonction de décollage ici
+
+        elif mqtt.current_mode == "land":
+            print("[MAIN] Appel de la fonction d'atterrissage...")
+            # TODO: Mettre votre fonction d'atterrissage ici
+
         elif mqtt.current_mode == "attente":
             epreuve1_task.state = "TAKEOFF"
             epreuve1_task.takeoff_done = False
             drone.send_velocity_body(0, 0, 0, 0)
+
+
+        if mqtt.hook_action == "hook_open":
+            print("[MAIN] Appel de la fonction d'ouverture du crochet...")
+            # TODO: Fonction ouverture (ex: hw.set_hook(True))
+
+        elif mqtt.hook_action == "hook_close":
+            print("[MAIN] Appel de la fonction de fermeture du crochet...")
+            # TODO: Fonction fermeture (ex: hw.set_hook(False))
+
+
 
         # D. Envoi de l'image dessinée au PC via GStreamer
         video.send_frame(canvas)

@@ -30,37 +30,40 @@ def init_static_interface():
     print("                       PANNEAU DE CONTRÔLE DRONE                       ")
     print("=======================================================================")
     print(" [1] Mode ATTENTE      [2] Mode EPREUVE 1      [3] Mode EPREUVE 2")
+    print(" [4] DÉCOLLAGE         [5] ATTERRISSAGE")
+    print(" [O] OUVRIR CROCHET    [C] FERMER CROCHET")
     print(" [B] Toggle Fond Noir  [S] Restart Script      [R] Reboot Raspberry Pi")
-    print(" [O] Éteindre le Pi    [Q] Quitter le Dashboard")
+    print(" [X] Éteindre le Pi    [Q] Quitter le Dashboard")
     print("=======================================================================")
-    print(" MODE: ATTENTE    | ESP32: DISCNN | IA: 0  FPS") # Ligne 8
-    print(" CPU: 0% | RAM: 0% | Chrono: 0s | Batterie: N/C") # Ligne 9
-    print("==========================================[ DERNIERS LOGS DRONE ]======") # Ligne 10
-    print(" -> En attente de logs...") # Ligne 11
-    print("") # Ligne 12
-    print("") # Ligne 13
-    print("") # Ligne 14
-    print("") # Ligne 15
-    print("") # Ligne 16
-    print("=======================================================================") # Ligne 17
-    print("> ", end="", flush=True) # Ligne 18
+    print(" MODE: ATTENTE    | ESP32: DISCNN | IA: 0  FPS") # Ligne 10 (décalée en raison des nouvelles lignes)
+    print(" CPU: 0% | RAM: 0% | Chrono: 0s | Batterie: N/C") # Ligne 11
+    print("==========================================[ DERNIERS LOGS DRONE ]======") # Ligne 12
+    print(" -> En attente de logs...") # Ligne 13
+    print("") 
+    print("") 
+    print("") 
+    print("") 
+    print("") 
+    print("") 
+    print("=======================================================================") # Ligne 20
+    print("> ", end="", flush=True)
 
 def update_telemetry_ui():
     """ Met à jour uniquement les lignes 8 et 9 (Télémétrie) """
     esp_status = "OK" if telemetry_data["esp_connected"] else "DISCNN"
     batt_str = f"{telemetry_data['batt_v']}V ({telemetry_data['batt_pct']}/%)" if telemetry_data['batt_v'] != -1 else "N/C"
     
-    line8 = f" MODE: {telemetry_data['mode'].upper():<10} | ESP32: {esp_status:<6} | IA: {telemetry_data['fps']:<2} FPS"
-    line9 = f" CPU: {telemetry_data['cpu_percent']}% | RAM: {telemetry_data['ram_percent']}% | Chrono: {telemetry_data['flight_time_sec']}s | Batterie: {batt_str}"
+    line10 = f" MODE: {telemetry_data['mode'].upper():<10} | ESP32: {esp_status:<6} | IA: {telemetry_data['fps']:<2} FPS"
+    line11 = f" CPU: {telemetry_data['cpu_percent']}% | RAM: {telemetry_data['ram_percent']}% | Chrono: {telemetry_data['flight_time_sec']}s | Batterie: {batt_str}"
     
-    print_at(8, 2, line8)
-    print_at(9, 2, line9)
+    print_at(10, 2, line10)
+    print_at(11, 2, line11)
 
 def update_logs_ui():
     """ Met à jour uniquement la zone des logs (Lignes 11 à 16) """
     current_logs = logs_buffer[-6:]
     for i, log in enumerate(current_logs):
-        print_at(11 + i, 5, f"{log:<62}")
+        print_at(13 + i, 5, f"{log:<62}")
 
 def log_local(message):        
     timestamp = time.strftime("%H:%M:%S")
@@ -111,7 +114,7 @@ while True:
         break
     
     # Nettoie la ligne de saisie de l'écran après chaque validation
-    print("\033[18;3H\033[K", end="", flush=True)
+    print("\033[21;3H\033[K", end="", flush=True)
     
     if cmd == '1':
         client.publish("drone/cmd", json.dumps({"action": "set_mode", "mode": "attente"}))
@@ -119,6 +122,14 @@ while True:
         client.publish("drone/cmd", json.dumps({"action": "set_mode", "mode": "epreuve1"}))
     elif cmd == '3':
         client.publish("drone/cmd", json.dumps({"action": "set_mode", "mode": "epreuve2"}))
+    elif cmd == '4':
+        client.publish("drone/cmd", json.dumps({"action": "set_mode", "mode": "takeoff"}))
+    elif cmd == '5':
+        client.publish("drone/cmd", json.dumps({"action": "set_mode", "mode": "land"}))
+    elif cmd == 'O':
+        client.publish("drone/cmd", json.dumps({"action": "set_hook", "state": "hook_open"}))
+    elif cmd == 'C':
+        client.publish("drone/cmd", json.dumps({"action": "set_hook", "state": "hook_close"}))
     elif cmd == 'B':
         black_bg_state = not black_bg_state
         client.publish("drone/cmd", json.dumps({"action": "video_bg", "black": black_bg_state}))
@@ -127,22 +138,19 @@ while True:
         client.publish("drone/system", json.dumps({"action": "restart_script"}))
         log_local("Demande de redémarrage du script Pi 5...")
     elif cmd == 'R':
-        # On place le curseur ligne 18, on efface la ligne, et on pose la question
-        print("\033[18;1H\033[K> Confirmer REBOOT du Pi (O/N) ? ", end="", flush=True)
+        print("\033[21;1H\033[K> Confirmer REBOOT du Pi (O/N) ? ", end="", flush=True)
         if input().strip().upper() == 'O':
             client.publish("drone/system", json.dumps({"action": "reboot"}))
-        # On remet le curseur classique si on annule
-        print("\033[18;1H\033[K> ", end="", flush=True) 
-        
-    elif cmd == 'O':
-        print("\033[18;1H\033[K> !!! CONFIRMER EXTINCTION PI 5 (O/N) ? ", end="", flush=True)
+        print("\033[21;1H\033[K> ", end="", flush=True) 
+    elif cmd == 'X':
+        print("\033[21;1H\033[K> !!! CONFIRMER EXTINCTION PI 5 (O/N) ? ", end="", flush=True)
         if input().strip().upper() == 'O':
             client.publish("drone/system", json.dumps({"action": "shutdown"}))
             time.sleep(1)
             break
-        print("\033[18;1H\033[K> ", end="", flush=True)
+        print("\033[21;1H\033[K> ", end="", flush=True)
     elif cmd == 'Q':
         break
 
 client.loop_stop()
-print("\033[19;1H\nDashboard fermé.\n")
+print("\033[22;1H\nDashboard fermé.\n")
