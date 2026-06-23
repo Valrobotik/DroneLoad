@@ -24,7 +24,6 @@ def print_at(line, col, text):
     print(f"\0337\033[{line};{col}H{text}\033[K\0338", end="", flush=True)
 
 def init_static_interface():
-    """ Dessine la structure fixe de l'interface au tout début """
     os.system('clear')
     print("=======================================================================")
     print("                       PANNEAU DE CONTRÔLE DRONE                       ")
@@ -32,38 +31,38 @@ def init_static_interface():
     print(" [1] Mode ATTENTE      [2] Mode EPREUVE 1      [3] Mode EPREUVE 2")
     print(" [4] DÉCOLLAGE         [5] ATTERRISSAGE")
     print(" [O] OUVRIR CROCHET    [C] FERMER CROCHET")
-    print(" [B] Toggle Fond Noir  [S] Restart Script      [R] Reboot Raspberry Pi")
+    print(" CIBLES IA : [F] Fleur  [V] Vache (cow)  [D] Chien (dog)  [M] Mouton")
+    print(" [B] Toggle Fond Noir  [S] Restart Script      [R] Reboot Pi           ")
     print(" [X] Éteindre le Pi    [Q] Quitter le Dashboard")
     print("=======================================================================")
-    print(" MODE: ATTENTE    | ESP32: DISCNN | IA: 0  FPS") # Ligne 10 (décalée en raison des nouvelles lignes)
-    print(" CPU: 0% | RAM: 0% | Chrono: 0s | Batterie: N/C") # Ligne 11
-    print("==========================================[ DERNIERS LOGS DRONE ]======") # Ligne 12
-    print(" -> En attente de logs...") # Ligne 13
-    print("") 
+    print(" MODE: ATTENTE    | ESP32: DISCNN | IA: 0  FPS") # Ligne 11
+    print(" CPU: 0% | RAM: 0% | Chrono: 0s | Batterie: N/C") # Ligne 12
+    print("==========================================[ DERNIERS LOGS DRONE ]======") # Ligne 13
+    print(" -> En attente de logs...") # Ligne 14
     print("") 
     print("") 
     print("") 
     print("") 
     print("") 
     print("=======================================================================") # Ligne 20
-    print("> ", end="", flush=True)
+    print("> ", end="", flush=True) # Ligne 21
 
 def update_telemetry_ui():
     """ Met à jour uniquement les lignes 8 et 9 (Télémétrie) """
     esp_status = "OK" if telemetry_data["esp_connected"] else "DISCNN"
     batt_str = f"{telemetry_data['batt_v']}V ({telemetry_data['batt_pct']}/%)" if telemetry_data['batt_v'] != -1 else "N/C"
     
-    line10 = f" MODE: {telemetry_data['mode'].upper():<10} | ESP32: {esp_status:<6} | IA: {telemetry_data['fps']:<2} FPS"
-    line11 = f" CPU: {telemetry_data['cpu_percent']}% | RAM: {telemetry_data['ram_percent']}% | Chrono: {telemetry_data['flight_time_sec']}s | Batterie: {batt_str}"
+    line11 = f" MODE: {telemetry_data['mode'].upper():<10} | ESP32: {esp_status:<6} | IA: {telemetry_data['fps']:<2} FPS"
+    line12 = f" CPU: {telemetry_data['cpu_percent']}% | RAM: {telemetry_data['ram_percent']}% | Chrono: {telemetry_data['flight_time_sec']}s | Batterie: {batt_str}"
     
-    print_at(10, 2, line10)
     print_at(11, 2, line11)
+    print_at(12, 2, line12)
 
 def update_logs_ui():
     """ Met à jour uniquement la zone des logs (Lignes 11 à 16) """
     current_logs = logs_buffer[-6:]
     for i, log in enumerate(current_logs):
-        print_at(13 + i, 5, f"{log:<62}")
+        print_at(14 + i, 5, f"{log:<62}")
 
 def log_local(message):        
     timestamp = time.strftime("%H:%M:%S")
@@ -130,6 +129,18 @@ while True:
         client.publish("drone/cmd", json.dumps({"action": "set_hook", "state": "hook_open"}))
     elif cmd == 'C':
         client.publish("drone/cmd", json.dumps({"action": "set_hook", "state": "hook_close"}))
+        
+    # --- NOUVELLES TOUCHES POUR LES CLASSES ---
+    elif cmd == 'F':
+        client.publish("drone/cmd", json.dumps({"action": "set_class", "class_name": "flower"}))
+    elif cmd == 'V':
+        client.publish("drone/cmd", json.dumps({"action": "set_class", "class_name": "cow"}))
+    elif cmd == 'D':
+        client.publish("drone/cmd", json.dumps({"action": "set_class", "class_name": "dog"}))
+    elif cmd == 'M':
+        client.publish("drone/cmd", json.dumps({"action": "set_class", "class_name": "sheep"}))
+    # ------------------------------------------
+
     elif cmd == 'B':
         black_bg_state = not black_bg_state
         client.publish("drone/cmd", json.dumps({"action": "video_bg", "black": black_bg_state}))

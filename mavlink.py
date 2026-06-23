@@ -241,6 +241,9 @@ class DroneController:
             0, yaw_rate)
     
     def land(self):
+        if not self.set_mode_safe(4, "GUIDED"):
+            return False
+        
         print("Atterrissage commandé !")
         self.master.mav.command_long_send(
             self.master.target_system, self.master.target_component,

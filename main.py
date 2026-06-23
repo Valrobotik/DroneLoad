@@ -12,6 +12,8 @@ from mqtt_server import MqttManager
 from opencv import ArucoProcessor
 from yolo import YoloProcessor
 
+from ultralytics import YOLO
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Raspberry Pi')
@@ -44,14 +46,18 @@ def main():
    # drone = DroneController(connection_string=mavlink_port)
     video = VideoManager(ip_dest="192.168.31.139", width=640, height=480)
 
+    modell1 = YOLO("best.pt")               #thiaw
     # 2. Initialisation Vision
     aruco_vision = ArucoProcessor()
     yolo_vision = YoloProcessor()
-    epreuve1_task = Epreuve1Task()
+    epreuve1_task = Epreuve1Task(modell1)            #thiaw
     takeoff_task = TakeOff()
     land_task = Land()
 
     mqtt.log_to_pc("Système prêt. En attente de commandes...")
+
+    t = 0               #thiaw
+    nbre_frame = 0      #thiaw
 
     # 3. Boucle Principale
     while True:
@@ -72,9 +78,11 @@ def main():
         canvas, yolo_data = yolo_vision.process(frame, canvas)
 
         # C. Logique de vol
-        if mqtt.current_mode == "epreuve1":
+        if mqtt.current_mode == "epreuve1" and mqtt.target_class is not None: #is not None ????????
             #run_epreuve1(drone, hw, arucos_data, video.width)
-            epreuve1_task.run(drone, hw, arucos_data, video.width, video.height)
+            if nbre_frame > 50:                                                         #thiaw
+                t = 0                                                                   #thiaw
+            t = epreuve1_task.run(drone, hw, arucos_data, video.width, video.height, frame, mqtt.target_class, t)      #thiaw
 
         elif mqtt.current_mode == "epreuve2":
             # On passe les données de YOLO

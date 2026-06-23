@@ -14,6 +14,7 @@ class MqttManager:
         # Variables d'état
         self.current_mode = "attente"
         self.hook_action = None
+        self.target_class = None
         self.black_bg = False
 
         # Pour les statistiques
@@ -81,6 +82,9 @@ class MqttManager:
                 self.log_to_pc(f"Vidéo fond noir : {self.black_bg}")
             elif action == "hook":
                 self.hw.set_hook(data.get("open", True))
+            elif action == "set_class": # <--- NOUVELLE ACTION
+                self.target_class = data.get("class_name")
+                self.log_to_pc(f"Cible IA (YOLO) changée : {self.target_class}")
             elif action == "arm":
                 self.log_to_pc("Commande d'armement reçue !")
                 # Remarque : Idéalement self.drone.arm()

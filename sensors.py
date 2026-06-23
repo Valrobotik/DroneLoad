@@ -81,72 +81,70 @@ class HardwareManager:
         self.etat_servo1="up"
         self.etat_servo2="down"
 
-        
+
     def servo_1_up(self):
         global t_servo1 
         global etat_servo1
         global now_servo
-        now_servo = time.time()
+        self.now_servo = time.time()
     
-        if t_servo1 == 0:
-            t_servo1 = time.time()
-        if now_servo <= t_servo1 + 0.2:
-            if etat_servo1 == "down":
+        if self.t_servo1 == 0:
+            self.t_servo1 = time.time()
+        if self.now_servo <= self.t_servo1 + 0.2:
+            if self.etat_servo1 == "down":
                 self.servo1.angle=10.0  
         else : 
             self.servo1.angle = None
-            etat_servo1 = "up"
-            t_servo1 = 0
+            self.etat_servo1 = "up"
+            self.t_servo1 = 0
 
     def servo_1_down(self):
         global t_servo1 
         global etat_servo1
         global now_servo1
-        now_servo1 = time.time()
+        self.now_servo1 = time.time()
     
-        if t_servo1 == 0:
-            t_servo1 = time.time()
-        if now_servo1 <= t_servo1 + 0.2:
-            if etat_servo1 == "up":
-                print("going2")
+        if self.t_servo1 == 0:
+            self.t_servo1 = time.time()
+        if self.now_servo1 <= self.t_servo1 + 0.2:
+            if self.etat_servo1 == "up":
                 self.servo1.angle=99.5  
         else : 
-            print("check2")
             self.servo1.angle = None
-            etat_servo1 = "down"
-            t_servo1 = 0
+            self.etat_servo1 = "down"
+            self.t_servo1 = 0
 
     def servo_2_up(self):
         global t_servo2 
         global etat_servo2
         global now_servo2
-        now_servo2 = time.time()
+        self.now_servo2 = time.time()
     
-        if t_servo2 == 0:
-            t_servo2 = time.time()
-        if now_servo2 <= t_servo2 + 0.2:
-            if etat_servo2 == "down":
+        if self.t_servo2 == 0:
+            self.t_servo2 = time.time()
+        if self.now_servo2 <= self.t_servo2 + 0.2:
+            if self.etat_servo2 == "down":
                 self.servo2.angle=0.0 
         else : 
             self.servo2.angle = None
-            etat_servo2 = "up"
-            t_servo2 = 0
+            self.etat_servo2 = "up"
+            self.t_servo2 = 0
     
     def servo_2_down(self):
         global t_servo2 
         global etat_servo2
         global now_servo2
-        now_servo2 = time.time()
+        self.now_servo2 = time.time()
     
-        if t_servo2 == 0:
-            t_servo2 = time.time()
-        if now_servo2 <= t_servo2 + 0.2:
-            if etat_servo2 == "down":
+        if self.t_servo2 == 0:
+            self.t_servo2 = time.time()
+        if self.now_servo2 <= self.t_servo2 + 0.2:
+            if self.etat_servo2 == "down":
                 self.servo2.angle=90.0 
         else : 
             self.servo2.angle = None
-            etat_servo2 = "up"
-            t_servo2 = 0
+            self.etat_servo2 = "up"
+            self.t_servo2 = 0
 
     def get_forward_distance(self):
         """ Retourne la distance vers l'avant en mètres """
@@ -172,7 +170,3 @@ class HardwareManager:
 
 
 manager = HardwareManager()
-
-while True:
-    manager.set_camera_pitch(1)
-    manager.set_hook(0)
