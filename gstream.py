@@ -6,7 +6,7 @@ import sys
 
 
 class VideoManager:
-    def __init__(self, ip_dest="192.168.2.9", port=5000, width=640, height=480):
+    def __init__(self, ip_dest="192.168.31.181", port=5000, width=640, height=480):
         self.width = width
         self.height = height
 

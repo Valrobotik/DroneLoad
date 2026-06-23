@@ -42,7 +42,7 @@ def main():
     mqtt.start(broker_ip="127.0.0.1")
 
    # drone = DroneController(connection_string=mavlink_port)
-    video = VideoManager(ip_dest="192.168.31.139", width=640, height=480)
+    video = VideoManager(ip_dest="192.168.31.181", width=640, height=480)
 
     # 2. Initialisation Vision
     aruco_vision = ArucoProcessor()

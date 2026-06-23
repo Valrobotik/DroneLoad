@@ -43,16 +43,11 @@ class Epreuve1Task:
         pitch_rad = getattr(drone, 'pitch', 0.0)
 
         # 2. Vérification de la détection d'ArUco
-        if arucos_data and len(arucos_data) > 0:
+        if arucos_data: # Vérifie si le dictionnaire n'est pas vide
             
-            try:
-                # On prend le premier marqueur détecté
-                first_aruco = arucos_data[0] 
-                raw_x = first_aruco['center'][0]
-                raw_y = first_aruco['center'][1]
-            except (KeyError, TypeError):
-                # Fallback générique si arucos_data est juste une liste de tuples (x,y)
-                raw_x, raw_y = arucos_data[0][0], arucos_data[0][1]
+            # On extrait le premier élément du dictionnaire 
+            # iter() crée un itérateur sur les paires clé/valeur, next() prend la première
+            first_id, (raw_x, raw_y) = next(iter(arucos_data.items()))
 
             # 3. Application de la correction
             corr_x, corr_y = self.compensate_camera_angles(
@@ -67,7 +62,7 @@ class Epreuve1Task:
             pitch_deg = math.degrees(pitch_rad)
             
             print(f"\r[TEST] Roll: {roll_deg:+06.1f}° | Pitch: {pitch_deg:+06.1f}° || "
-                  f"RAW: X={raw_x:4.0f}, Y={raw_y:4.0f} -> CORR: X={corr_x:4.0f}, Y={corr_y:4.0f}      ", 
+                  f"ID:{first_id:2d} | RAW: X={raw_x:4.0f}, Y={raw_y:4.0f} -> CORR: X={corr_x:4.0f}, Y={corr_y:4.0f}      ", 
                   end="", flush=True)
                   
         else:
