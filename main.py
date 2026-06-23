@@ -54,7 +54,8 @@ def main():
     epreuve1_task = Epreuve1Task()
 
     mqtt.log_to_pc("Système prêt. En attente de commandes...")
-
+    t = 0
+    nbre_frame = 0
     # 3. Boucle Principale
     while True:
         # A. Acquisition de l'image réelle
@@ -76,7 +77,9 @@ def main():
         # C. Logique de vol
         if mqtt.current_mode == "epreuve1":
             #run_epreuve1(drone, hw, arucos_data, video.width)
-            epreuve1_task.run(drone, hw, arucos_data, video.width, video.height)
+            if nbre_frame > 50:
+                t = 0
+            t = epreuve1_task.run(drone, hw, arucos_data, video.width, video.height, frame, classe, t)
 
         elif mqtt.current_mode == "epreuve2":
             # On passe les données de YOLO
