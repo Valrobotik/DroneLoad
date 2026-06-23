@@ -4,7 +4,8 @@ import time
 import os
 import sys
 
-BROKER_IP = "192.168.31.113"
+#BROKER_IP = "192.168.31.113"
+BROKER_IP = "172.0.0.1"
 
 # Variables globales
 telemetry_data = {
