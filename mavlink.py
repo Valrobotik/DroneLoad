@@ -132,12 +132,15 @@ class DroneController:
         self.request_message_interval(132, 20) # DISTANCE_SENSOR (Lidar brut)
         time.sleep(0.2) # Petit temps mort pour que le Pixhawk ouvre le canal
         
-        self.set_ekf_origin()
+        #self.set_ekf_origin()      #pas besoin en ext
+
         if not self.set_mode_safe(4, "GUIDED"):
             return False
             
+        print("Armement des moteurs...")
         self.master.arducopter_arm()
         self.master.motors_armed_wait()
+        print("Moteurs Armés !")
         
         # Envoi de l'ordre
         self.master.mav.command_long_send(
@@ -153,7 +156,7 @@ class DroneController:
         Le drone utilise son propre algorithme de décollage avec le flux optique.
         """
         # 1. On donne un repère à l'EKF
-        self.set_ekf_origin()
+        #self.set_ekf_origin()          #pas besoin en ext
         
         # 2. Passage en mode GUIDED (Mode 4)
         if not self.set_mode_safe(4, "GUIDED"):

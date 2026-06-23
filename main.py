@@ -6,7 +6,7 @@ from mavlink import DroneController, DummyDroneController
 from gstream import VideoManager
 from sensors import HardwareManager
 # from epreuve1 import run_epreuve1
-from epreuve1 import Epreuve1Task
+from epreuve1 import Epreuve1Task, TakeOff, Land
 from epreuve2 import run_epreuve2
 from mqtt_server import MqttManager
 from opencv import ArucoProcessor
@@ -48,6 +48,8 @@ def main():
     aruco_vision = ArucoProcessor()
     yolo_vision = YoloProcessor()
     epreuve1_task = Epreuve1Task()
+    takeoff_task = TakeOff()
+    land_task = Land()
 
     mqtt.log_to_pc("Système prêt. En attente de commandes...")
 
@@ -80,11 +82,11 @@ def main():
 
         elif mqtt.current_mode == "takeoff":
             print("[MAIN] Appel de la fonction de décollage...")
-            # TODO: Mettre votre fonction de décollage ici
+            takeoff_task.run(drone, hw, arucos_data, video.width, video.height)
 
         elif mqtt.current_mode == "land":
             print("[MAIN] Appel de la fonction d'atterrissage...")
-            # TODO: Mettre votre fonction d'atterrissage ici
+            land_task.run(drone, hw, arucos_data, video.width, video.height)
 
         elif mqtt.current_mode == "attente":
             epreuve1_task.state = "TAKEOFF"
