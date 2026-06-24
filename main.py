@@ -48,7 +48,8 @@ def main():
    # drone = DroneController(connection_string=mavlink_port)
     video = VideoManager(ip_dest=IP, width=640, height=480)
 
-    modell1 = YOLO("best.pt")               #thiaw
+    #modell1 = YOLO("best.pt")               #thiaw
+    modell1 = YOLO("best_ncnn_model") 
     # 2. Initialisation Vision
     #aruco_vision = ArucoProcessor()
     #yolo_vision = YoloProcessor()
