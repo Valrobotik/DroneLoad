@@ -87,6 +87,35 @@ class HardwareManager:
         self.etat_servo2="down"
 
 
+    def update(self):
+        """ Gère la coupure du signal PWM pour éviter les tremblements """
+        # Coupe le signal du servo 1 après 0.5s
+        if self.t_servo1 != 0 and time.time() > self.t_servo1 + 0.5:
+            self.servo1.angle = None
+            self.t_servo1 = 0
+            
+        # Coupe le signal du servo 2 après 1.0s
+        if self.t_servo2 != 0 and time.time() > self.t_servo2 + 0.5:
+            self.servo2.angle = None
+            self.t_servo2 = 0
+
+
+    def servo_2_up(self):
+        if self.etat_servo2 != "up":
+            self.servo2.angle = 0.0 
+            self.t_servo2 = time.time()
+            self.etat_servo2 = "up"
+            self.state = False
+    
+    def servo_2_down(self):
+        if self.etat_servo2 != "down":
+            self.servo2.angle = 90.0 
+            self.t_servo2 = time.time()
+            self.etat_servo2 = "down"
+            self.state = False
+
+
+
     def servo_1_up(self):
         global t_servo1 
         global etat_servo1
@@ -153,7 +182,7 @@ class HardwareManager:
             self.etat_servo2 = "up"
             self.t_servo2 = 0
 
-    def servo_2_up(self):
+    def servo_222_up(self):
         if self.etat_servo2 != "up":
             if self.t_servo2 == 0:
                 self.t_servo2 = time.time()
@@ -167,7 +196,7 @@ class HardwareManager:
                 self.etat_servo2 = "up"
                 self.t_servo2 = 0
     
-    def servo_2_down(self):
+    def servo_222_down(self):
         if self.etat_servo2 != "down":
             if self.t_servo2 == 0:
                 self.t_servo2 = time.time()
