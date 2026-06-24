@@ -58,6 +58,8 @@ def main():
 
     init_detection = True
 
+    hw.servo_2_down() 
+
     # 3. Boucle Principale
     while True:
         # A. Acquisition de l'image réelle
@@ -83,7 +85,8 @@ def main():
                 epreuve1_task.tps=time.time()
                 init_detection = False
             if epreuve1_task.run(drone, hw, arucos_data, video.width, video.height, frame, mqtt.target_class):
-                hw.servo_1_down()                       #1 ou 2 ????????????
+                hw.state=True
+                hw.servo_2_up()                 
 
         elif mqtt.current_mode == "epreuve2":
             # On passe les données de YOLO
@@ -105,11 +108,14 @@ def main():
 
         if mqtt.hook_action == "hook_open":
             print("[MAIN] Appel de la fonction d'ouverture du crochet...")
-            hw.servo_1_down()                   #1 ou 2 ????????????
+            hw.state=True
+            hw.servo_2_up()                   
 
         elif mqtt.hook_action == "hook_close":
             print("[MAIN] Appel de la fonction de fermeture du crochet...")
-            hw.servo_1_up()                     #1 ou 2 ????????????
+            hw.state=True
+            hw.servo_2_down()
+                                
 
 
 
