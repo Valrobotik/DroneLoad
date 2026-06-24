@@ -9,7 +9,7 @@ class TakeOff:
 
         self.last_time = time.time()
         
-    def run(self, drone, hw, arucos_data, frame_width, frame_height):
+    def run(self, drone, hw, frame_width, frame_height):
         ALTITUDE_CIBLE = 1 # 1=100+25 cm
 
         now = time.time()
@@ -52,7 +52,7 @@ class Land:
 
         self.last_time = time.time()
         
-    def run(self, drone, hw, arucos_data, frame_width, frame_height):
+    def run(self, drone, hw, frame_width, frame_height):
         if self.state == "LAND":
             drone.send_velocity_body(0, 0, 0, 0)
             drone.land()
@@ -112,7 +112,7 @@ class Epreuve1Task:
         # Vérifie que target_class est présente ET que c'est la SEULE classe
         return detected_classes == {target_class}
 
-    def run(self, drone, hw, arucos_data, frame_width, frame_height, frame, classe):
+    def run(self, drone, hw, frame_width, frame_height, frame, classe):
         self.frame = frame
         if self.is_only_class_detected(classe, 0.5):
             self.t+=1

@@ -50,8 +50,8 @@ def main():
 
     modell1 = YOLO("best.pt")               #thiaw
     # 2. Initialisation Vision
-    aruco_vision = ArucoProcessor()
-    yolo_vision = YoloProcessor()
+    #aruco_vision = ArucoProcessor()
+    #yolo_vision = YoloProcessor()
     epreuve1_task = Epreuve1Task(modell1)            #thiaw
     takeoff_task = TakeOff()
     land_task = Land()
@@ -65,20 +65,23 @@ def main():
     # 3. Boucle Principale
     while True:
         # A. Acquisition de l'image réelle
-        frame = video.get_frame()
-        if frame is None:
+        #frame = video.get_frame()
+        #if frame is None:
+
+        canvas = video.get_frame()
+        if canvas is None:
             time.sleep(0.01)
             continue
 
         # Création du calque de dessin (Normal = copie de l'image, Noir = image vide)
-        if mqtt.black_bg:
-            canvas = np.zeros_like(frame)
-        else:
-            canvas = frame.copy()
+        #if mqtt.black_bg:
+        #    canvas = np.zeros_like(frame)
+        #else:
+        #    canvas = frame.copy()
 
         # B. Traitement visuel (analyse sur 'frame', dessine sur 'canvas')
-        canvas, arucos_data = aruco_vision.process(frame, canvas)
-        canvas, yolo_data = yolo_vision.process(frame, canvas)
+        #canvas, arucos_data = aruco_vision.process(frame, canvas)
+        #canvas, yolo_data = yolo_vision.process(frame, canvas)
 
         # C. Logique de vol
         if mqtt.current_mode == "epreuve1" and mqtt.target_class is not None: #is not None ????????
@@ -86,7 +89,7 @@ def main():
             if init_detection:
                 epreuve1_task.tps=time.time()
                 init_detection = False
-            if epreuve1_task.run(drone, hw, arucos_data, video.width, video.height, frame, mqtt.target_class):
+            if epreuve1_task.run(drone, hw, video.width, video.height, canvas, mqtt.target_class):
                 print("Cible trouvée")
                 hw.state=True
                 hw.servo_2_up()   
@@ -94,15 +97,15 @@ def main():
 
         elif mqtt.current_mode == "epreuve2":
             # On passe les données de YOLO
-            run_epreuve2(drone, hw, yolo_data, video.width)
+            run_epreuve2(drone, hw, video.width)
 
         elif mqtt.current_mode == "takeoff":
             print("[MAIN] Appel de la fonction de décollage...")
-            takeoff_task.run(drone, hw, arucos_data, video.width, video.height)
+            takeoff_task.run(drone, hw, video.width, video.height)
 
         elif mqtt.current_mode == "land":
             print("[MAIN] Appel de la fonction d'atterrissage...")
-            land_task.run(drone, hw, arucos_data, video.width, video.height)
+            land_task.run(drone, hw, video.width, video.height)
 
         elif mqtt.current_mode == "attente":
             epreuve1_task.state = "TAKEOFF"
