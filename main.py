@@ -14,8 +14,8 @@ from yolo import YoloProcessor
 
 from ultralytics import YOLO
 
-IP = "192.168.31.139"
-IP = "192.168.2.9"
+IP = "192.168.31.181"
+#IP = "192.168.2.9"
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Raspberry Pi')
