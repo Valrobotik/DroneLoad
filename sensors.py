@@ -63,9 +63,11 @@ class HardwareManager:
             self._chip = chip
             self.pin_class = gpiozero.pins.lgpio.LGPIOPin
 
+        self.state = True
+
         gpiozero.pins.lgpio.LGPIOFactory.__init__ = __patched_init
         pin_servo1=17
-        pin_servo2=27
+        pin_servo2=13 #27
 
         myCorrection=0.45
         max_ang = 180.0
@@ -76,10 +78,42 @@ class HardwareManager:
         self.servo1 = AngularServo(pin_servo1,min_angle=min_ang, max_angle=max_ang, min_pulse_width=minPW,max_pulse_width=maxPW)
         self.servo2 = AngularServo(pin_servo2,min_angle=min_ang, max_angle=max_ang, min_pulse_width=minPW,max_pulse_width=maxPW)
         
+        self.servo1.angle = None
+        self.servo2.angle = None
+
         self.t_servo1 = 0
         self.t_servo2 = 0
         self.etat_servo1="up"
         self.etat_servo2="down"
+
+
+    def update(self):
+        """ Gère la coupure du signal PWM pour éviter les tremblements """
+        # Coupe le signal du servo 1 après 0.5s
+        if self.t_servo1 != 0 and time.time() > self.t_servo1 + 0.5:
+            self.servo1.angle = None
+            self.t_servo1 = 0
+            
+        # Coupe le signal du servo 2 après 1.0s
+        if self.t_servo2 != 0 and time.time() > self.t_servo2 + 0.5:
+            self.servo2.angle = None
+            self.t_servo2 = 0
+
+
+    def servo_2_up(self):
+        if self.etat_servo2 != "up":
+            self.servo2.angle = 0.0 
+            self.t_servo2 = time.time()
+            self.etat_servo2 = "up"
+            self.state = False
+    
+    def servo_2_down(self):
+        if self.etat_servo2 != "down":
+            self.servo2.angle = 90.0 
+            self.t_servo2 = time.time()
+            self.etat_servo2 = "down"
+            self.state = False
+
 
 
     def servo_1_up(self):
@@ -114,7 +148,7 @@ class HardwareManager:
             self.etat_servo1 = "down"
             self.t_servo1 = 0
 
-    def servo_2_up(self):
+    def servo_22_up(self):
         global t_servo2 
         global etat_servo2
         global now_servo2
@@ -122,15 +156,16 @@ class HardwareManager:
     
         if self.t_servo2 == 0:
             self.t_servo2 = time.time()
-        if self.now_servo2 <= self.t_servo2 + 0.2:
+        if self.now_servo2 <= self.t_servo2 + 1:
             if self.etat_servo2 == "down":
                 self.servo2.angle=0.0 
+                self.state=False
         else : 
             self.servo2.angle = None
             self.etat_servo2 = "up"
             self.t_servo2 = 0
     
-    def servo_2_down(self):
+    def servo_22_down(self):
         global t_servo2 
         global etat_servo2
         global now_servo2
@@ -138,13 +173,41 @@ class HardwareManager:
     
         if self.t_servo2 == 0:
             self.t_servo2 = time.time()
-        if self.now_servo2 <= self.t_servo2 + 0.2:
+        if self.now_servo2 <= self.t_servo2 + 1:
             if self.etat_servo2 == "down":
                 self.servo2.angle=90.0 
+                self.state=False
         else : 
             self.servo2.angle = None
             self.etat_servo2 = "up"
             self.t_servo2 = 0
+
+    def servo_222_up(self):
+        if self.etat_servo2 != "up":
+            if self.t_servo2 == 0:
+                self.t_servo2 = time.time()
+            
+            # 1 seconde d'activation pour le servo 2
+            if time.time() <= self.t_servo2 + 0.5:
+                self.servo2.angle = 0.0 
+                self.state = False
+            else: 
+                self.servo2.angle = None
+                self.etat_servo2 = "up"
+                self.t_servo2 = 0
+    
+    def servo_222_down(self):
+        if self.etat_servo2 != "down":
+            if self.t_servo2 == 0:
+                self.t_servo2 = time.time()
+            
+            if time.time() <= self.t_servo2 + 0.5:
+                self.servo2.angle = 90.0 
+                self.state = False
+            else: 
+                self.servo2.angle = None
+                self.etat_servo2 = "down"
+                self.t_servo2 = 0
 
     def get_forward_distance(self):
         """ Retourne la distance vers l'avant en mètres """
@@ -169,4 +232,4 @@ class HardwareManager:
             self.servo_2_down()
 
 
-manager = HardwareManager()
+

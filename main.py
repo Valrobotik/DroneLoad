@@ -14,6 +14,8 @@ from yolo import YoloProcessor
 
 from ultralytics import YOLO
 
+IP = "192.168.31.139"
+IP = "192.168.2.9"
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Raspberry Pi')
@@ -44,7 +46,7 @@ def main():
     mqtt.start(broker_ip="127.0.0.1")
 
    # drone = DroneController(connection_string=mavlink_port)
-    video = VideoManager(ip_dest="192.168.31.139", width=640, height=480)
+    video = VideoManager(ip_dest=IP, width=640, height=480)
 
     modell1 = YOLO("best.pt")               #thiaw
     # 2. Initialisation Vision
@@ -57,6 +59,8 @@ def main():
     mqtt.log_to_pc("Système prêt. En attente de commandes...")
 
     init_detection = True
+
+    hw.servo_2_down() 
 
     # 3. Boucle Principale
     while True:
@@ -83,7 +87,10 @@ def main():
                 epreuve1_task.tps=time.time()
                 init_detection = False
             if epreuve1_task.run(drone, hw, arucos_data, video.width, video.height, frame, mqtt.target_class):
-                hw.servo_1_down()                       #1 ou 2 ????????????
+                print("Cible trouvée")
+                hw.state=True
+                hw.servo_2_up()   
+            canvas = epreuve1_task.frame              
 
         elif mqtt.current_mode == "epreuve2":
             # On passe les données de YOLO
@@ -105,17 +112,23 @@ def main():
 
         if mqtt.hook_action == "hook_open":
             print("[MAIN] Appel de la fonction d'ouverture du crochet...")
-            hw.servo_1_down()                   #1 ou 2 ????????????
+            hw.state=True
+            hw.servo_2_up()             
+            mqtt.hook_action = None      
 
         elif mqtt.hook_action == "hook_close":
             print("[MAIN] Appel de la fonction de fermeture du crochet...")
-            hw.servo_1_up()                     #1 ou 2 ????????????
+            hw.state=True
+            hw.servo_2_down()
+            mqtt.hook_action = None
+                                
 
 
 
         # D. Envoi de l'image dessinée au PC via GStreamer
         video.send_frame(canvas)
         mqtt.update_telemetry()  # Calcule les FPS et envoie les données
+        hw.update()
 
 
 if __name__ == "__main__":

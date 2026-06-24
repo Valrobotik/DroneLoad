@@ -1,4 +1,5 @@
 import time
+import cv2
 
 class TakeOff:
     def __init__(self):
@@ -74,9 +75,13 @@ class Epreuve1Task:
         self.fps=0
         self.t=0
 
-    def is_only_class_detected(self , frame, target_class: str,confidence_threshold: float = 0.5) -> bool:
+        self.frame = None
 
-        results = self.modell(frame, verbose=False)
+    def is_only_class_detected(self, target_class: str,confidence_threshold: float = 0.5) -> bool:
+        if self.frame is None:
+            return False
+        
+        results = self.modell(self.frame, verbose=False)
         result = results[0]
 
         if len(result.boxes) == 0:
@@ -85,18 +90,31 @@ class Epreuve1Task:
         confidences = result.boxes.conf.tolist()
         class_ids = [int(c) for c in result.boxes.cls.tolist()]
 
+        boxes = result.boxes.xyxy.tolist()
+
         detected_classes = set()
 
-        for conf, cls_id in zip(confidences, class_ids):
+        for conf, cls_id, box in zip(confidences, class_ids, boxes):
             if conf >= confidence_threshold:
                 class_name = result.names[cls_id]
                 detected_classes.add(class_name)
 
+                color = (0, 255, 0) if class_name == target_class else (0, 0, 255)
+                x1, y1, x2, y2 = map(int, box)
+                
+                # Dessine le rectangle
+                cv2.rectangle(self.frame, (x1, y1), (x2, y2), color, 2)
+                
+                # Ajoute le texte (Nom + Confiance)
+                label = f"{class_name} {conf:.2f}"
+                cv2.putText(self.frame, label, (x1, max(y1 - 10, 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
         # Vérifie que target_class est présente ET que c'est la SEULE classe
         return detected_classes == {target_class}
 
-    def run(self, drone, hw, arucos_data, frame_width, frame_height, frame,classe):
-        if self.is_only_class_detected(frame, classe, 0.5):
+    def run(self, drone, hw, arucos_data, frame_width, frame_height, frame, classe):
+        self.frame = frame
+        if self.is_only_class_detected(classe, 0.5):
             self.t+=1
         self.fps+=1
         if time.time()-self.tps>=2:
@@ -104,5 +122,5 @@ class Epreuve1Task:
                 return True
             self.tps=time.time()
             self.t=0
-            self.tps=0
+            self.fps=0
         return False
