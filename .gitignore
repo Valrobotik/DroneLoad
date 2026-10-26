@@ -1,6 +1,14 @@
-# Created by venv; see https://docs.python.org/3/library/venv.html
-*.venv/
-.idea/
+# Environnements Python
+.venv/
+venv/
 __pycache__/
 *.pyc
+*.egg-info/
+
+# Éditeurs / OS
+.idea/
+.vscode/
 .DS_Store
+
+# Claude Code (réglages locaux)
+.claude/settings.local.json
