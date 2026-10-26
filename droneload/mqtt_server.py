@@ -15,7 +15,6 @@ class MqttManager:
         self.current_mode = "attente"
         self.hook_action = None
         self.target_class = None
-        self.black_bg = False
 
         # Pour les statistiques
         self.start_time = time.time()
@@ -77,21 +76,15 @@ class MqttManager:
             elif action == "set_hook":
                 self.hook_action = data.get("state")
                 self.log_to_pc(f"Action crochet demandée : {self.hook_action}")
-            elif action == "video_bg":
-                self.black_bg = data.get("black", False)
-                self.log_to_pc(f"Vidéo fond noir : {self.black_bg}")
-            elif action == "hook":
-                self.hw.set_hook(data.get("open", True))
-            elif action == "set_class": # <--- NOUVELLE ACTION
+            elif action == "set_class":
                 self.target_class = data.get("class_name")
                 self.log_to_pc(f"Cible IA (YOLO) changée : {self.target_class}")
             elif action == "arm":
                 self.log_to_pc("Commande d'armement reçue !")
-                # Remarque : Idéalement self.drone.arm()
-                self.drone.master.arducopter_arm()
+                self.drone.arm()
             elif action == "disarm":
                 self.log_to_pc("Commande de désarmement reçue !")
-                self.drone.master.arducopter_disarm()
+                self.drone.disarm()
 
         elif topic == "drone/system":
             if action == "reboot":

@@ -1,19 +1,18 @@
 import cv2
-import numpy as np
 import threading
 import time
 import sys
 
 
 class VideoManager:
-    def __init__(self, ip_dest="192.168.2.9", port=5000, width=640, height=480):
+    def __init__(self, ip_dest, port=5000, width=640, height=480, fps=15):
         self.width = width
         self.height = height
 
         # --- 1. ENTRÉE VIDÉO ---
         pipeline_in = (
             f"libcamerasrc ! "
-            f"video/x-raw,format=NV12,width={width},height={height},framerate=15/1 ! "
+            f"video/x-raw,format=NV12,width={width},height={height},framerate={fps}/1 ! "
             f"videoconvert ! video/x-raw,format=BGR ! appsink drop=true max-buffers=1"
         )
 
@@ -53,7 +52,7 @@ class VideoManager:
             f"jpegenc ! rtpjpegpay ! "
             f"udpsink host={ip_dest} port={port} sync=false"
         )
-        self.writer = cv2.VideoWriter(pipeline_out, cv2.CAP_GSTREAMER, 0, 15, (width, height), True)
+        self.writer = cv2.VideoWriter(pipeline_out, cv2.CAP_GSTREAMER, 0, fps, (width, height), True)
 
     def _capture_loop(self):
         """

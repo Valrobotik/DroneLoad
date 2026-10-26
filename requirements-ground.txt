@@ -1,0 +1,2 @@
+# PC de pilotage (dashboard)
+paho-mqtt>=2.0
