@@ -1,61 +1,14 @@
-# Bibliothèques fictives ou génériques pour l'exemple
-# Utilise gpiozero ou RPi.GPIO pour les servos, et la lib pimoroni pour le ToF
 import time
-import numpy as np
-#import vl53l5cx_ctypes as vl53l5cx
-#from vl53l5cx_ctypes import STATUS_RANGE_VALID, STATUS_RANGE_VALID_LARGE_PULSE, RANGING_MODE_CONTINUOUS
 from gpiozero import AngularServo
 import gpiozero.pins.lgpio
 import lgpio
 
-class VL53L5CXReader:
-    """
-    Thread dédié à la lecture continue du VL53L5CX en I2C sur Raspberry Pi.
-    Expose la dernière distance mesurée sans jamais bloquer l'appelant.
-    """
-
-    def __init__(self):
-        self._distance_mm: float | None = None
-
-        # Init capteur
-        print("Uploading firmware, please wait...")
-        self._sensor = vl53l5cx.VL53L5CX()
-        print("Done!")
-        self._sensor.set_resolution(8 * 8)
-   
-   ####
-        self._sensor.set_ranging_frequency_hz(15) # 15 Hz
-        self._sensor.set_ranging_mode(RANGING_MODE_CONTINUOUS)
-####
-        self._sensor.start_ranging()
-        
-        
-    
-
-    def get_distance(self) -> float | None:
-        """
-        Retourne la dernière distance estimée en mm.
-        Non bloquant, instantané.
-        """
-        with self._lock:
-            return self._distance_mm
-
-    def _run(self):
-        data = self._sensor.get_data()
-
-        distances = np.array(data.distance_mm, dtype=float)
-        distances = distances[distances > 0]  # éliminer les mesures nulles/invalides
-
-        # Médiane des 64 zones → robuste au bruit et aux fausses détections
-        median_mm = float(np.median(distances))
-
-
-        self._distance_mm = median_mm
 
 class HardwareManager:
     def __init__(self):
-        print("Initialisation du capteur VL53L5CX et des servos...")
-        # TODO: init I2C pour VL53L5CX
+        print("Initialisation des servos...")
+
+        # Correctif nécessaire sur Pi 5 : force l'ouverture de gpiochip0
         def __patched_init(self, chip=None):
             gpiozero.pins.lgpio.LGPIOFactory.__bases__[0].__init__(self)
             chip = 0
@@ -63,29 +16,26 @@ class HardwareManager:
             self._chip = chip
             self.pin_class = gpiozero.pins.lgpio.LGPIOPin
 
-        self.state = True
-
         gpiozero.pins.lgpio.LGPIOFactory.__init__ = __patched_init
-        pin_servo1=17
-        pin_servo2=13 #27
+        pin_servo1 = 17  # caméra
+        pin_servo2 = 13  # crochet
 
-        myCorrection=0.45
+        myCorrection = 0.45
         max_ang = 180.0
         min_ang = 0.0
-        maxPW=(2.0+myCorrection)/1000
-        minPW=(1.0-myCorrection)/1000
-        
-        self.servo1 = AngularServo(pin_servo1,min_angle=min_ang, max_angle=max_ang, min_pulse_width=minPW,max_pulse_width=maxPW)
-        self.servo2 = AngularServo(pin_servo2,min_angle=min_ang, max_angle=max_ang, min_pulse_width=minPW,max_pulse_width=maxPW)
-        
+        maxPW = (2.0 + myCorrection) / 1000
+        minPW = (1.0 - myCorrection) / 1000
+
+        self.servo1 = AngularServo(pin_servo1, min_angle=min_ang, max_angle=max_ang, min_pulse_width=minPW, max_pulse_width=maxPW)
+        self.servo2 = AngularServo(pin_servo2, min_angle=min_ang, max_angle=max_ang, min_pulse_width=minPW, max_pulse_width=maxPW)
+
         self.servo1.angle = None
         self.servo2.angle = None
 
         self.t_servo1 = 0
         self.t_servo2 = 0
-        self.etat_servo1="up"
-        self.etat_servo2="down"
-
+        self.etat_servo1 = "up"
+        self.etat_servo2 = "down"
 
     def update(self):
         """ Gère la coupure du signal PWM pour éviter les tremblements """
@@ -93,143 +43,58 @@ class HardwareManager:
         if self.t_servo1 != 0 and time.time() > self.t_servo1 + 0.5:
             self.servo1.angle = None
             self.t_servo1 = 0
-            
-        # Coupe le signal du servo 2 après 1.0s
+
+        # Coupe le signal du servo 2 après 0.5s
         if self.t_servo2 != 0 and time.time() > self.t_servo2 + 0.5:
             self.servo2.angle = None
             self.t_servo2 = 0
 
-
+    # --- Servo 2 : crochet ---
     def servo_2_up(self):
         if self.etat_servo2 != "up":
-            self.servo2.angle = 0.0 
+            self.servo2.angle = 0.0
             self.t_servo2 = time.time()
             self.etat_servo2 = "up"
-            self.state = False
-    
+
     def servo_2_down(self):
         if self.etat_servo2 != "down":
-            self.servo2.angle = 90.0 
+            self.servo2.angle = 90.0
             self.t_servo2 = time.time()
             self.etat_servo2 = "down"
-            self.state = False
 
-
-
+    # --- Servo 1 : caméra (à appeler à chaque tick jusqu'à la fin du mouvement) ---
     def servo_1_up(self):
-        global t_servo1 
-        global etat_servo1
-        global now_servo
-        self.now_servo = time.time()
-    
+        now = time.time()
         if self.t_servo1 == 0:
-            self.t_servo1 = time.time()
-        if self.now_servo <= self.t_servo1 + 0.2:
+            self.t_servo1 = now
+        if now <= self.t_servo1 + 0.2:
             if self.etat_servo1 == "down":
-                self.servo1.angle=10.0  
-        else : 
+                self.servo1.angle = 10.0
+        else:
             self.servo1.angle = None
             self.etat_servo1 = "up"
             self.t_servo1 = 0
 
     def servo_1_down(self):
-        global t_servo1 
-        global etat_servo1
-        global now_servo1
-        self.now_servo1 = time.time()
-    
+        now = time.time()
         if self.t_servo1 == 0:
-            self.t_servo1 = time.time()
-        if self.now_servo1 <= self.t_servo1 + 0.2:
+            self.t_servo1 = now
+        if now <= self.t_servo1 + 0.2:
             if self.etat_servo1 == "up":
-                self.servo1.angle=99.5  
-        else : 
+                self.servo1.angle = 99.5
+        else:
             self.servo1.angle = None
             self.etat_servo1 = "down"
             self.t_servo1 = 0
 
-    def servo_22_up(self):
-        global t_servo2 
-        global etat_servo2
-        global now_servo2
-        self.now_servo2 = time.time()
-    
-        if self.t_servo2 == 0:
-            self.t_servo2 = time.time()
-        if self.now_servo2 <= self.t_servo2 + 1:
-            if self.etat_servo2 == "down":
-                self.servo2.angle=0.0 
-                self.state=False
-        else : 
-            self.servo2.angle = None
-            self.etat_servo2 = "up"
-            self.t_servo2 = 0
-    
-    def servo_22_down(self):
-        global t_servo2 
-        global etat_servo2
-        global now_servo2
-        self.now_servo2 = time.time()
-    
-        if self.t_servo2 == 0:
-            self.t_servo2 = time.time()
-        if self.now_servo2 <= self.t_servo2 + 1:
-            if self.etat_servo2 == "down":
-                self.servo2.angle=90.0 
-                self.state=False
-        else : 
-            self.servo2.angle = None
-            self.etat_servo2 = "up"
-            self.t_servo2 = 0
-
-    def servo_222_up(self):
-        if self.etat_servo2 != "up":
-            if self.t_servo2 == 0:
-                self.t_servo2 = time.time()
-            
-            # 1 seconde d'activation pour le servo 2
-            if time.time() <= self.t_servo2 + 0.5:
-                self.servo2.angle = 0.0 
-                self.state = False
-            else: 
-                self.servo2.angle = None
-                self.etat_servo2 = "up"
-                self.t_servo2 = 0
-    
-    def servo_222_down(self):
-        if self.etat_servo2 != "down":
-            if self.t_servo2 == 0:
-                self.t_servo2 = time.time()
-            
-            if time.time() <= self.t_servo2 + 0.5:
-                self.servo2.angle = 90.0 
-                self.state = False
-            else: 
-                self.servo2.angle = None
-                self.etat_servo2 = "down"
-                self.t_servo2 = 0
-
-    def get_forward_distance(self):
-        """ Retourne la distance vers l'avant en mètres """
-        # TODO: Lire le capteur Pimoroni
-        return 2.5  # Mock: retourne 2.5 mètres par défaut
-
     def set_camera_pitch(self, cam_state):
-        """ cam_state : -1 : caméra position haute
-                        -0 : caméra position basse
-        """
-        #print(f"Caméra pivotée à {cam_state}°")
+        """ cam_state : 1 -> servo_1_down (99.5°), sinon servo_1_up (10°) """
         if cam_state == 1:
             self.servo_1_down()
         else:
             self.servo_1_up()
-    
-    def set_hook(self, open_state):
-        #print(f"Crochet ouvert : {open_state}")
-        if open_state == 1:
-            self.servo_2_up()
-        if open_state == 0:
-            self.servo_2_down()
 
-
-
+    def get_forward_distance(self):
+        """ Retourne la distance vers l'avant en mètres """
+        # TODO: aucun capteur frontal (VL53L5CX non fonctionnel), valeur fictive
+        return 2.5

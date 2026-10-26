@@ -1,0 +1,11 @@
+# Raspberry Pi (code embarqué)
+# OpenCV doit être compilé avec GStreamer : sur le Pi, préférer le paquet système (python3-opencv)
+pymavlink
+ultralytics
+ncnn
+opencv-python
+paho-mqtt>=2.0
+psutil
+gpiozero
+lgpio
+numpy

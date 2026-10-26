@@ -2,10 +2,11 @@ import paho.mqtt.client as mqtt
 import json
 import time
 import os
-import sys
+import argparse
 
-#BROKER_IP = "192.168.31.90"
-BROKER_IP = "192.168.2.3"
+parser = argparse.ArgumentParser(description="Dashboard MQTT du drone")
+parser.add_argument("--broker", default="192.168.2.3", help="IP du Raspberry Pi (broker MQTT)")
+BROKER_IP = parser.parse_args().broker
 
 # Variables globales
 telemetry_data = {
@@ -14,7 +15,6 @@ telemetry_data = {
     "batt_v": -1, "batt_pct": -1
 }
 logs_buffer = []
-black_bg_state = False
 is_first_connect = True  
 
 def print_at(line, col, text):
@@ -33,7 +33,7 @@ def init_static_interface():
     print(" [4] DÉCOLLAGE         [5] ATTERRISSAGE")
     print(" [O] OUVRIR CROCHET    [C] FERMER CROCHET")
     print(" CIBLES IA : [F] Fleur  [V] Vache (cow)  [D] Chien (dog)  [M] Mouton")
-    print(" [B] Toggle Fond Noir  [S] Restart Script      [R] Reboot Pi           ")
+    print(" [S] Restart Script    [R] Reboot Pi")
     print(" [X] Éteindre le Pi    [Q] Quitter le Dashboard")
     print("=======================================================================")
     print(" MODE: ATTENTE    | ESP32: DISCNN | IA: 0  FPS") # Ligne 11
@@ -131,7 +131,7 @@ while True:
     elif cmd == 'C':
         client.publish("drone/cmd", json.dumps({"action": "set_hook", "state": "hook_close"}))
         
-    # --- NOUVELLES TOUCHES POUR LES CLASSES ---
+    # --- Classes cibles IA ---
     elif cmd == 'F':
         client.publish("drone/cmd", json.dumps({"action": "set_class", "class_name": "flower"}))
     elif cmd == 'V':
@@ -142,10 +142,6 @@ while True:
         client.publish("drone/cmd", json.dumps({"action": "set_class", "class_name": "sheep"}))
     # ------------------------------------------
 
-    elif cmd == 'B':
-        black_bg_state = not black_bg_state
-        client.publish("drone/cmd", json.dumps({"action": "video_bg", "black": black_bg_state}))
-        log_local(f"Commande Fond Noir : {black_bg_state}")
     elif cmd == 'S':
         client.publish("drone/system", json.dumps({"action": "restart_script"}))
         log_local("Demande de redémarrage du script Pi 5...")
