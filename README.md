@@ -21,9 +21,15 @@ droneload/           code embarqué (Raspberry Pi)
   mqtt_server.py     commandes et télémétrie MQTT
   tasks/             épreuves (machines à états, non bloquantes)
   vision/            ArUco (pas encore branché)
-ground/              PC de pilotage : dashboard MQTT + lanceur macOS
+ground/              PC de pilotage : dashboard MQTT + lanceur (macOS, Linux, Windows)
 tools/               scripts autonomes (calibration caméra)
 models/              modèle YOLO entraîné (best.pt + export NCNN)
+sim/                 simulation : monde Gazebo, modèle du drone, bridge, test de fumée
+autopilot/params/    paramètres ArduPilot versionnés (communs réel/SITL + spécifiques SITL)
+provision/           installation Ansible (images Docker, PC Linux, plus tard la Pi)
+docker/              Dockerfiles de la simulation
+compose*.yml         services de la simulation (Docker Compose)
+docs/                documentation (simulation)
 ```
 
 ## Installation
@@ -34,11 +40,22 @@ python3 -m venv .venv --system-site-packages   # pour récupérer l'OpenCV syst�
 .venv/bin/pip install -r requirements.txt
 ```
 
-Sur le PC de pilotage :
+### PC de pilotage
+
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements-ground.txt
+.venv/bin/pip install -r requirements-ground.txt     # Windows : .venv\Scripts\pip
 ```
+
+Le flux vidéo nécessite GStreamer (`gst-launch-1.0`) :
+
+| OS | Installation |
+|---|---|
+| macOS | `brew install gstreamer` |
+| Ubuntu / Debian | `sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-good` |
+| Windows | installeur « runtime » MSVC 64 bits sur [gstreamer.freedesktop.org](https://gstreamer.freedesktop.org/download/), puis ajouter `C:\Program Files\gstreamer\1.0\msvc_x86_64\bin` au PATH |
+
+Vérification : `gst-inspect-1.0 rtpjpegdepay` doit décrire l'élément.
 
 ## Lancement
 
@@ -50,13 +67,21 @@ python -m droneload --no-pixhawk    # vision seule, aucune commande MAVLink
 python -m droneload --pc-ip 192.168.2.9   # change la destination du flux vidéo
 ```
 
-Sur le PC (macOS) :
+Sur le PC, depuis la racine du repo :
 ```bash
-./ground/dashboard.command --broker <IP du Pi>
+.venv/bin/python ground/launch.py --broker <IP du Pi>    # Windows : .venv\Scripts\python
 ```
-Le script ouvre un terminal avec le récepteur vidéo GStreamer (UDP 5000) et un autre avec le dashboard.
+Le script ouvre la fenêtre vidéo GStreamer (UDP 5000) et lance le dashboard dans le terminal. Sur macOS, `ground/dashboard.command` fait la même chose en double-clic.
 
 Les valeurs par défaut (IP, ports, résolution, modèle) sont dans `droneload/config.py`.
+
+## Simulation
+
+ArduPilot SITL + Gazebo + ROS 2 dans Docker, identique sur Mac et Linux. Voir [docs/simulation.md](docs/simulation.md).
+```bash
+docker compose up -d
+docker compose exec companion bash -lc 'python3 sim/scripts/smoke_test.py'
+```
 
 ## Protocole MQTT
 
@@ -71,4 +96,4 @@ Les valeurs par défaut (IP, ports, résolution, modèle) sont dans `droneload/c
 ## Sécurité
 
 - La commande `arm` **arme réellement les moteurs**.
-- Toute modification de la logique de vol doit être validée en `--sim` avant un essai réel.
+- Toute modification de la logique de vol doit être validée en simulation avant un essai réel.

@@ -1,0 +1,12 @@
+# Paramètres spécifiques au SITL : remplacent le matériel réel par ses équivalents simulés.
+# Chargé après drone.parm (les valeurs ici l'emportent).
+
+# Plage moteurs du plugin ArduPilot (modèle Gazebo iris)
+MOT_PWM_MIN      1100
+MOT_PWM_MAX      1900
+
+# MTF-01 simulé, transmis à l'autopilote comme sur le drone (et non à ROS) :
+# flux optique calculé par le SITL, lidar = capteur Gazebo envoyé par le plugin ArduPilot (rng_1)
+SIM_FLOW_ENABLE  1
+FLOW_TYPE        10     # SITL
+RNGFND1_TYPE     100    # SITL

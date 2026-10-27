@@ -1,0 +1,14 @@
+# Provisioning DroneLoad : source unique d'installation (images Docker, PC Linux, et plus tard la Pi).
+#
+#   Image Docker / PC Linux (ROS 2 seul) : ansible-playbook -c local -i localhost, site.yml
+#   PC Linux avec Gazebo natif           : ansible-playbook -c local -i localhost, site.yml -e with_sim=true -e droneload_repo=$PWD/..
+#   (le rôle companion, spécifique à la Pi, viendra quand la Pi sera sous Ubuntu 24.04)
+- name: Installation DroneLoad
+  hosts: localhost
+  become: true
+  vars:
+    with_sim: false
+  roles:
+    - role: common
+    - role: sim
+      when: with_sim | bool

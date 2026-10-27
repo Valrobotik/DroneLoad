@@ -1,0 +1,32 @@
+# Paramètres ArduCopter communs au vrai drone et au SITL.
+# Ordre de chargement en SITL : copter.parm (défauts ArduPilot) -> drone.parm -> sitl.parm.
+#
+# ATTENTION : fichier pas encore aligné sur la Pixhawk. Avant de le charger sur le vrai drone,
+# exporter les paramètres actuels (QGroundControl > Paramètres > Outils > Enregistrer) et comparer.
+# Ne jamais désactiver ARMING_CHECK : on configure le vol sans GPS, on ne contourne pas les sécurités.
+
+# --- Châssis : F450 en X ---
+FRAME_CLASS      1      # quadri
+FRAME_TYPE       1      # X
+
+# --- Vol intérieur sans GPS ---
+# Le module M8N reste sur le drone mais seul son compas (I2C) est branché : le GPS est désactivé.
+GPS1_TYPE        0      # aucun GPS
+AHRS_EKF_TYPE    3      # EKF3
+# Sources EKF, jeu 1 : flux optique (vitesse horizontale) + baromètre (altitude).
+# Quand l'UWB sera prêt : EK3_SRC1_POSXY 6 (ExternalNav), et le flux optique passera en jeu 2 (secours).
+EK3_SRC1_POSXY   0      # aucune position absolue
+EK3_SRC1_VELXY   5      # flux optique
+EK3_SRC1_POSZ    1      # baromètre
+EK3_SRC1_VELZ    0      # aucune
+EK3_SRC1_YAW     1      # boussole (compas du M8N)
+
+# --- MTF-01 (flux optique + lidar) branché sur la Pixhawk, en MAVLink ---
+FLOW_TYPE        5      # MAVLink
+RNGFND1_TYPE     10     # MAVLink
+RNGFND1_ORIENT   25     # vers le bas
+RNGFND1_MIN      0.05   # m
+RNGFND1_MAX      8      # m
+
+# --- Sécurités ---
+FS_EKF_ACTION    1      # estimation de position incohérente : atterrissage

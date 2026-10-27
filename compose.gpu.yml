@@ -1,0 +1,17 @@
+# Override PC Linux avec GPU NVIDIA (NVIDIA Container Toolkit requis) : rendu des caméras et GUI sur GPU.
+x-gpu: &gpu
+  environment:
+    NVIDIA_DRIVER_CAPABILITIES: all
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+    GZ_PARTITION: ${GZ_PARTITION:-droneload}
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  gz-server: *gpu
+  gz-gui: *gpu

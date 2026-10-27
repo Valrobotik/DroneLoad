@@ -25,7 +25,7 @@ def print_at(line, col, text):
     print(f"\0337\033[{line};{col}H{text}\033[K\0338", end="", flush=True)
 
 def init_static_interface():
-    os.system('clear')
+    os.system('cls' if os.name == 'nt' else 'clear')
     print("=======================================================================")
     print("                       PANNEAU DE CONTRÔLE DRONE                       ")
     print("=======================================================================")

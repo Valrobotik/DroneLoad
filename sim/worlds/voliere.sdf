@@ -1,0 +1,150 @@
+<?xml version="1.0" ?>
+<!--
+  Volière DroneLoad (8 x 6 m), disposition reprise de la simulation 2025-2026 :
+  bords rouges, zones de départ/arrivée bleues (ArUco 0 au sol), 2 piliers, 2 fenêtres
+  avec un ArUco (DICT_4X4_50, 20 cm) à chaque coin, sur les deux faces.
+  Repère : x vers l'avant du drone au départ, z vers le haut, origine au centre de la volière.
+-->
+<sdf version="1.9">
+  <world name="voliere">
+    <!-- Pas de 1 ms, synchronisé avec le SITL (lock-step du plugin ArduPilot) -->
+    <physics name="1ms" type="ignore">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+
+    <scene>
+      <ambient>0.6 0.6 0.6 1</ambient>
+      <background>0.8 0.8 0.8 1</background>
+      <shadows>false</shadows>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision"><geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry></collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Drone au départ, au-dessus de l'ArUco 0, face à la fenêtre 1 -->
+    <include>
+      <uri>model://droneload_drone</uri>
+      <name>drone</name>
+      <pose>-3.75 -1.5 0.195 0 0 0</pose>
+    </include>
+
+    <model name="zones_sol">
+      <static>true</static>
+      <link name="link">
+        <visual name="bord_gauche"><pose>0 3 0.005 0 0 0</pose><geometry><box><size>8 0.05 0.01</size></box></geometry><material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material></visual>
+        <visual name="bord_droit"><pose>0 -3 0.005 0 0 0</pose><geometry><box><size>8 0.05 0.01</size></box></geometry><material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material></visual>
+        <visual name="bord_haut"><pose>4 0 0.005 0 0 0</pose><geometry><box><size>0.05 6 0.01</size></box></geometry><material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material></visual>
+        <visual name="bord_bas"><pose>-4 0 0.005 0 0 0</pose><geometry><box><size>0.05 6 0.01</size></box></geometry><material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material></visual>
+
+        <visual name="zb1_gauche"><pose>-3.5 -1.5 0.005 0 0 0</pose><geometry><box><size>0.02 3 0.01</size></box></geometry><material><ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse></material></visual>
+        <visual name="zb1_droite"><pose>-4.0 -1.5 0.005 0 0 0</pose><geometry><box><size>0.02 3 0.01</size></box></geometry><material><ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse></material></visual>
+        <visual name="zb1_haut"><pose>-3.75 0 0.005 0 0 0</pose><geometry><box><size>0.5 0.02 0.01</size></box></geometry><material><ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse></material></visual>
+        <visual name="zb1_bas"><pose>-3.75 -3.0 0.005 0 0 0</pose><geometry><box><size>0.5 0.02 0.01</size></box></geometry><material><ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse></material></visual>
+
+        <visual name="aruco_0"><pose>-3.75 -1.5 0.012 0 0 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_0.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_0.png</emissive_map></metal></pbr></material>
+        </visual>
+
+        <visual name="zb2_gauche"><pose>4.0 0 0.005 0 0 0</pose><geometry><box><size>0.02 6 0.01</size></box></geometry><material><ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse></material></visual>
+        <visual name="zb2_droite"><pose>3.5 0 0.005 0 0 0</pose><geometry><box><size>0.02 6 0.01</size></box></geometry><material><ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse></material></visual>
+        <visual name="zb2_haut"><pose>3.75 3.0 0.005 0 0 0</pose><geometry><box><size>0.5 0.02 0.01</size></box></geometry><material><ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse></material></visual>
+        <visual name="zb2_bas"><pose>3.75 -3.0 0.005 0 0 0</pose><geometry><box><size>0.5 0.02 0.01</size></box></geometry><material><ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="pilier_1">
+      <static>true</static>
+      <pose>2 -2 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><cylinder><radius>0.2</radius><length>2.5</length></cylinder></geometry></collision>
+        <visual name="vis"><geometry><cylinder><radius>0.2</radius><length>2.5</length></cylinder></geometry><material><ambient>0.2 0.8 0.2 1</ambient><diffuse>0.2 0.8 0.2 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="pilier_2">
+      <static>true</static>
+      <pose>1 2 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><cylinder><radius>0.2</radius><length>2.5</length></cylinder></geometry></collision>
+        <visual name="vis"><geometry><cylinder><radius>0.2</radius><length>2.5</length></cylinder></geometry><material><ambient>0.8 0.8 0.2 1</ambient><diffuse>0.8 0.8 0.2 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="fenetre_1">
+      <static>true</static>
+      <pose>-3 -2 1.0 0 0 0</pose>
+      <link name="link">
+        <visual name="f1_top"><pose>0 0 0.65 0 0 0</pose><geometry><box><size>0.02 1.6 0.3</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <collision name="f1_top_c"><pose>0 0 0.65 0 0 0</pose><geometry><box><size>0.02 1.6 0.3</size></box></geometry></collision>
+
+        <visual name="f1_bottom"><pose>0 0 -0.65 0 0 0</pose><geometry><box><size>0.02 1.6 0.3</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <collision name="f1_bottom_c"><pose>0 0 -0.65 0 0 0</pose><geometry><box><size>0.02 1.6 0.3</size></box></geometry></collision>
+
+        <visual name="f1_left"><pose>0 0.65 0 0 0 0</pose><geometry><box><size>0.02 0.3 1.0</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <collision name="f1_left_c"><pose>0 0.65 0 0 0 0</pose><geometry><box><size>0.02 0.3 1.0</size></box></geometry></collision>
+
+        <visual name="f1_right"><pose>0 -0.65 0 0 0 0</pose><geometry><box><size>0.02 0.3 1.0</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <collision name="f1_right_c"><pose>0 -0.65 0 0 0 0</pose><geometry><box><size>0.02 0.3 1.0</size></box></geometry></collision>
+
+        <visual name="a4"><pose>-0.015  0.65 -0.65 0 -1.5707 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_4.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_4.png</emissive_map></metal></pbr></material></visual>
+        <visual name="a5"><pose>-0.015  0.65  0.65 0 -1.5707 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_5.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_5.png</emissive_map></metal></pbr></material></visual>
+        <visual name="a6"><pose>-0.015 -0.65  0.65 0 -1.5707 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_6.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_6.png</emissive_map></metal></pbr></material></visual>
+        <visual name="a7"><pose>-0.015 -0.65 -0.65 0 -1.5707 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_7.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_7.png</emissive_map></metal></pbr></material></visual>
+
+        <visual name="a8"><pose>0.015 -0.65 -0.65 0 1.5707 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_8.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_8.png</emissive_map></metal></pbr></material></visual>
+        <visual name="a9"><pose>0.015 -0.65  0.65 0 1.5707 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_9.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_9.png</emissive_map></metal></pbr></material></visual>
+        <visual name="a10"><pose>0.015  0.65  0.65 0 1.5707 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_10.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_10.png</emissive_map></metal></pbr></material></visual>
+        <visual name="a11"><pose>0.015  0.65 -0.65 0 1.5707 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_11.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_11.png</emissive_map></metal></pbr></material></visual>
+      </link>
+    </model>
+
+    <model name="fenetre_2">
+      <static>true</static>
+      <pose>3 2 1.0 0 0 0</pose>
+      <link name="link">
+        <visual name="f2_top"><pose>0 0 0.65 0 0 0</pose><geometry><box><size>0.02 1.6 0.3</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <collision name="f2_top_c"><pose>0 0 0.65 0 0 0</pose><geometry><box><size>0.02 1.6 0.3</size></box></geometry></collision>
+
+        <visual name="f2_bottom"><pose>0 0 -0.65 0 0 0</pose><geometry><box><size>0.02 1.6 0.3</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <collision name="f2_bottom_c"><pose>0 0 -0.65 0 0 0</pose><geometry><box><size>0.02 1.6 0.3</size></box></geometry></collision>
+
+        <visual name="f2_left"><pose>0 0.65 0 0 0 0</pose><geometry><box><size>0.02 0.3 1.0</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <collision name="f2_left_c"><pose>0 0.65 0 0 0 0</pose><geometry><box><size>0.02 0.3 1.0</size></box></geometry></collision>
+
+        <visual name="f2_right"><pose>0 -0.65 0 0 0 0</pose><geometry><box><size>0.02 0.3 1.0</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <collision name="f2_right_c"><pose>0 -0.65 0 0 0 0</pose><geometry><box><size>0.02 0.3 1.0</size></box></geometry></collision>
+
+        <visual name="a12"><pose>-0.015 -0.65 -0.65 0 -1.5707 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_12.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_12.png</emissive_map></metal></pbr></material></visual>
+        <visual name="a13"><pose>-0.015 -0.65  0.65 0 -1.5707 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_13.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_13.png</emissive_map></metal></pbr></material></visual>
+
+        <visual name="a14"><pose>0.015 0.65 -0.65 0 1.5707 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_14.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_14.png</emissive_map></metal></pbr></material></visual>
+        <visual name="a15"><pose>0.015 0.65  0.65 0 1.5707 0</pose><geometry><box><size>0.2 0.2 0.001</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse><emissive>1 1 1 1</emissive><pbr><metal><albedo_map>model://aruco_markers/materials/textures/aruco_15.png</albedo_map><emissive_map>model://aruco_markers/materials/textures/aruco_15.png</emissive_map></metal></pbr></material></visual>
+      </link>
+    </model>
+  </world>
+</sdf>

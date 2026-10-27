@@ -1,0 +1,5 @@
+# Commit figé du plugin ArduPilot pour Gazebo (branche main, compatible Harmonic)
+ardupilot_gazebo_version: 80dc9664dda7efd6c5d1a71a79198d1d6b708c0e
+ardupilot_gazebo_dir: /opt/ardupilot_gazebo
+# Emplacement du repo DroneLoad (mondes et modèles de sim/) ; /workspace dans les conteneurs
+droneload_repo: /workspace

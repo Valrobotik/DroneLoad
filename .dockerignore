@@ -1,0 +1,4 @@
+# Seuls docker/ et provision/ servent au build : le reste du repo est monté à l'exécution.
+*
+!docker/
+!provision/
