@@ -1,15 +1,21 @@
 # Socle commun à tous les environnements : ROS 2, MAVROS, Foxglove bridge, venv Python.
 
-- name: Paquets de base
+- name: Dossier d'état DroneLoad
+  ansible.builtin.file:
+    path: /var/lib/droneload
+    state: directory
+    mode: "0755"
+
+# Photo des paquets présents avant la première installation (système de base) :
+# install/check.py ne signale que ce qui a été ajouté ensuite hors d'Ansible.
+- name: Paquets apt du système de base (une seule fois)
+  ansible.builtin.shell: apt-mark showmanual > /var/lib/droneload/apt-base.txt
+  args:
+    creates: /var/lib/droneload/apt-base.txt
+
+- name: Paquets du socle (install/packages.yml, section socle)
   ansible.builtin.apt:
-    name:
-      - build-essential
-      - ca-certificates
-      - curl
-      - git
-      - locales
-      - python3-pip
-      - python3-venv
+    name: "{{ socle.apt }}"
     update_cache: true
 
 - name: Locale UTF-8 (requise par ROS 2)
@@ -20,15 +26,9 @@
   ansible.builtin.apt:
     deb: "https://github.com/ros-infrastructure/ros-apt-source/releases/download/{{ ros_apt_source_version }}/ros2-apt-source_{{ ros_apt_source_version }}.{{ ansible_distribution_release }}_all.deb"
 
-- name: ROS 2, MAVROS, Foxglove bridge, OpenCV système
+- name: Paquets apt communs (install/packages.yml, section commun)
   ansible.builtin.apt:
-    name:
-      - "ros-{{ ros_distro }}-ros-base"
-      - "ros-{{ ros_distro }}-mavros"
-      - "ros-{{ ros_distro }}-mavros-extras"
-      - "ros-{{ ros_distro }}-foxglove-bridge"
-      - ros-dev-tools
-      - python3-opencv
+    name: "{{ commun.apt }}"
     update_cache: true
 
 - name: Datasets GeographicLib (requis par MAVROS)
@@ -46,9 +46,9 @@
   become: false
   changed_when: false
 
-- name: Venv Python du projet (voit rclpy et OpenCV système)
+- name: Paquets pip communs dans le venv, qui voit rclpy et OpenCV système (section commun)
   ansible.builtin.pip:
-    requirements: "{{ droneload_requirements }}"
+    name: "{{ commun.pip }}"
     virtualenv: "{{ droneload_venv }}"
     virtualenv_command: python3 -m venv
     virtualenv_site_packages: true

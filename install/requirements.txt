@@ -1,5 +1,0 @@
-# Dépendances Python du futur code ROS 2, installées dans le venv /opt/droneload_venv par le rôle common.
-# Versions figées. Le venv voit les paquets système (--system-site-packages) : rclpy, numpy et
-# OpenCV (python3-opencv, compilé avec GStreamer pour libcamerasrc) viennent d'apt, ne pas les ajouter ici.
-paho-mqtt==2.1.0      # pont MQTT <-> ROS 2 (dashboard, robot ESP32)
-pymavlink==2.4.50     # scripts de débogage MAVLink

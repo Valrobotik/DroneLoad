@@ -1,4 +1,3 @@
 ros_distro: jazzy
 ros_apt_source_version: "1.3.0"
 droneload_venv: /opt/droneload_venv
-droneload_requirements: "{{ playbook_dir }}/requirements.txt"

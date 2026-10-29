@@ -1,21 +1,18 @@
 # Simulation : Gazebo Harmonic (fourni par ros_gz, même version que le bridge) + plugin ardupilot_gazebo.
 # Sert à l'image Docker sim et à un PC Linux qui veut la GUI Gazebo en natif (gz sim -g).
 
-- name: ros_gz (Gazebo Harmonic) et dépendances du plugin ArduPilot
+- name: Paquets apt de la simulation (install/packages.yml, section sim) - ros_gz, plugin ArduPilot
   ansible.builtin.apt:
-    name:
-      - "ros-{{ ros_distro }}-ros-gz"
-      - cmake
-      - rapidjson-dev
-      - libopencv-dev
-      - libgstreamer1.0-dev
-      - libgstreamer-plugins-base1.0-dev
-      - gstreamer1.0-plugins-bad
-      - gstreamer1.0-libav
-      - gstreamer1.0-gl
-      - libegl1
-      - libgl1-mesa-dri
+    name: "{{ sim.apt }}"
     update_cache: true
+
+- name: Paquets pip de la simulation (section sim)
+  ansible.builtin.pip:
+    name: "{{ sim.pip }}"
+    virtualenv: "{{ droneload_venv }}"
+    virtualenv_command: python3 -m venv
+    virtualenv_site_packages: true
+  when: sim.pip | length > 0
 
 - name: Sources ardupilot_gazebo
   ansible.builtin.git:

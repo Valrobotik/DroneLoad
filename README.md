@@ -21,7 +21,6 @@ drone/               code embarqué (Raspberry Pi)
   mqtt_server.py     commandes et télémétrie MQTT
   tasks/             épreuves (machines à états, non bloquantes)
   vision/            ArUco (pas encore branché)
-  requirements.txt
 tools/               scripts autonomes (calibration caméra)
 ground/              PC de pilotage : dashboard MQTT + lanceur (macOS, Linux, Windows)
   requirements.txt
@@ -30,7 +29,7 @@ sim/                 simulation (Docker Compose) : monde Gazebo, modèle du dron
 config/              configuration des équipements
   ardupilot/         paramètres ArduPilot (communs réel/SITL + spécifiques SITL)
                      (à venir : elrs/, radio/)
-install/             installation Ansible des ordinateurs (images Docker, PC Linux, plus tard la Pi)
+install/             installation Ansible des ordinateurs (Pi, images Docker, PC Linux) : voir install/README.md
 models/              modèle YOLO entraîné (best.pt + export NCNN)
 docs/                documentation (simulation)
 .github/             règles de contribution : contrôle des PR, hook et modèle de commit
@@ -38,11 +37,32 @@ docs/                documentation (simulation)
 
 ## Installation
 
-Sur le Raspberry Pi, il faut un broker MQTT local (mosquitto) sur 127.0.0.1:1883 et une version d'OpenCV compilée avec GStreamer :
+### Raspberry Pi
+
+Sur une Pi sous Ubuntu Server 24.04 (arm64), tout s'installe avec Ansible :
 ```bash
-python3 -m venv .venv --system-site-packages   # pour récupérer l'OpenCV système avec GStreamer
-.venv/bin/pip install -r drone/requirements.txt
+git clone https://github.com/Valrobotik/DroneLoad.git    # ou en SSH : git@github.com:Valrobotik/DroneLoad.git
+cd DroneLoad
+./install/apply.sh
 ```
+Cette commande installe ROS 2 et MAVROS, le broker MQTT, GStreamer et libcamera, ainsi que les paquets Python dans le venv `/opt/droneload_venv` (avec l'OpenCV système compilé avec GStreamer). On peut la relancer autant de fois qu'on veut : elle ne refait que ce qui manque.
+
+### Ajouter un paquet
+
+**On n'installe jamais rien à la main sur la Pi** (pas de `sudo apt install` ni de `pip install`) : ce serait perdu à la prochaine réinstallation de la carte SD. Tous les paquets sont listés dans un seul fichier, [install/packages.yml](install/packages.yml), rangés par machine : `pi`, `commun` (Pi + simu + PC Linux) et `sim`.
+
+1. Ajouter une ligne sous la bonne machine, dans `apt` (paquet système) ou `pip` (paquet Python, version figée) :
+   ```yaml
+   pi:
+     apt:
+       - i2c-tools
+     pip:
+       - smbus2==0.5.1
+   ```
+2. Installer : sur la Pi, `./install/apply.sh` ; pour la simu, `cd sim && docker compose build`.
+3. Committer `install/packages.yml` dans la même PR que le code qui utilise le paquet.
+
+`python3 install/check.py` liste ce qui a été installé sans passer par ce fichier. Sur la Pi, il tourne toutes les heures et affiche les écarts dans le dashboard. Détails : [install/README.md](install/README.md).
 
 ### PC de pilotage
 
@@ -122,6 +142,8 @@ Le travail est suivi dans les issues et le Project GitHub. Règles :
 git config core.hooksPath .github/hooks
 git config commit.template .github/gitmessage
 ```
+**Dépendances** : un paquet (apt ou pip) nécessaire au drone ou à la simu s'ajoute dans `install/packages.yml`, dans la même PR que le code qui en a besoin. Jamais d'installation à la main sur la Pi (voir [install/README.md](install/README.md)).
+
 Les mêmes règles sont vérifiées automatiquement sur chaque PR ; une PR qui ne les respecte pas ne peut pas être fusionnée.
 
 Cycle d'une issue dans le Project : **Todo** → **In progress** (on commence) → PR ouverte → validation → **Done** (fermée par la fusion).

@@ -1,0 +1,9 @@
+[Unit]
+Description=DroneLoad : paquets installés hors d'Ansible (install/check.py)
+After=mosquitto.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 {{ droneload_repo }}/install/check.py --mqtt
+# code 1 = écarts trouvés, déjà signalés sur drone/logs : pas un échec du service
+SuccessExitStatus=1

@@ -1,0 +1,62 @@
+# Tout ce qu'Ansible installe : LE fichier à modifier pour ajouter un paquet (voir install/README.md).
+# Ajouter une ligne sous la bonne machine, dans apt (paquet système) ou pip (paquet Python,
+# version figée « nom==x.y.z »), puis lancer ./install/apply.sh. Ne jamais installer à la main sur la Pi.
+# Les paquets pip vont dans le venv /opt/droneload_venv, qui voit les paquets Python d'apt.
+
+# Pi + images de simu + PC Linux
+commun:
+  apt:
+    - "ros-{{ ros_distro }}-ros-base"
+    - "ros-{{ ros_distro }}-mavros"
+    - "ros-{{ ros_distro }}-mavros-extras"
+    - "ros-{{ ros_distro }}-foxglove-bridge"
+    - ros-dev-tools
+    - python3-opencv          # compilé avec GStreamer : ne jamais ajouter opencv-python dans pip
+  pip:
+    - paho-mqtt==2.1.0        # MQTT (dashboard, robot ESP32)
+    - pymavlink==2.4.50       # MAVLink (code actuel, scripts de débogage)
+
+# Raspberry Pi seulement
+pi:
+  apt:
+    - mosquitto               # broker MQTT local (dashboard, robot ESP32)
+    - mosquitto-clients       # mosquitto_pub : alertes de install/check.py sur drone/logs
+    - gstreamer1.0-tools
+    - gstreamer1.0-plugins-good   # jpegenc, rtpjpegpay, udpsink : flux vidéo vers le PC
+    - gstreamer1.0-libcamera      # libcamerasrc (à valider sur Pi 5 avec la libcamera d'Ubuntu)
+    - libcamera-tools
+    - python3-lgpio           # servos (gpiozero sur Pi 5)
+    - python3-psutil          # télémétrie CPU/RAM
+  pip:                        # torch (version CPU) est installé à part par le rôle pi
+    - ultralytics==8.4.192
+    - ncnn==1.0.20261020
+    - gpiozero==2.0.1.post3
+    - numpy<2                 # python3-opencv d'Ubuntu est compilé avec NumPy 1.x
+
+# Simulation seulement (images Docker, PC Linux avec Gazebo natif)
+sim:
+  apt:
+    - "ros-{{ ros_distro }}-ros-gz"
+    - cmake                   # compilation du plugin ardupilot_gazebo
+    - rapidjson-dev
+    - libopencv-dev
+    - libgstreamer1.0-dev
+    - libgstreamer-plugins-base1.0-dev
+    - gstreamer1.0-plugins-bad
+    - gstreamer1.0-libav
+    - gstreamer1.0-gl
+    - libegl1                 # rendu Gazebo sans écran
+    - libgl1-mesa-dri
+  pip: []
+
+# Installé en premier, avant le dépôt ROS 2 : normalement rien à ajouter ici
+socle:
+  apt:
+    - build-essential
+    - ca-certificates
+    - curl
+    - git
+    - locales
+    - python3-pip
+    - python3-venv
+  pip: []

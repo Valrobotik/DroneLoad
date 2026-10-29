@@ -1,14 +1,21 @@
-# Provisioning DroneLoad : source unique d'installation (images Docker, PC Linux, et plus tard la Pi).
+# Installation DroneLoad : source unique d'installation (images Docker, PC Linux, Raspberry Pi).
+# Paquets apt et pip de chaque machine : install/packages.yml. Voir install/README.md.
 #
-#   Image Docker / PC Linux (ROS 2 seul) : ansible-playbook -c local -i localhost, site.yml
-#   PC Linux avec Gazebo natif           : ansible-playbook -c local -i localhost, site.yml -e with_sim=true -e droneload_repo=$PWD/..
-#   (le rôle companion, spécifique à la Pi, viendra quand la Pi sera sous Ubuntu 24.04)
+#   Raspberry Pi                         : ./install/apply.sh            (détecte la Pi, ajoute -e with_pi=true)
+#   PC Linux avec Gazebo natif           : ./install/apply.sh sim
+#   Image Docker (ROS 2 seul)            : ansible-playbook -c local -i localhost, site.yml
 - name: Installation DroneLoad
   hosts: localhost
   become: true
+  vars_files:
+    - packages.yml
   vars:
     with_sim: false
+    with_pi: false
+    droneload_repo: /workspace   # emplacement du repo ; apply.sh passe le vrai chemin
   roles:
     - role: common
     - role: sim
       when: with_sim | bool
+    - role: pi
+      when: with_pi | bool

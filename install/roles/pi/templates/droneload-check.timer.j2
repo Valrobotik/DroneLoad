@@ -1,0 +1,9 @@
+[Unit]
+Description=DroneLoad : vérification horaire des installations hors Ansible
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target

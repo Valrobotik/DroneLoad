@@ -84,7 +84,7 @@ Le PC n'a pas besoin de ROS 2.
 ## Vue 3D
 
 - **Mac / Windows** : `docker compose --profile gui up -d gz-gui` puis http://localhost:6901. Le rendu est logiciel (5-10 FPS), suffisant pour vérifier une scène. Fermer la GUI pendant les tests de vision : elle consomme du CPU.
-- **Linux** : GUI native, fluide avec GPU. Installer Gazebo une fois avec le playbook (`cd install && sudo ansible-playbook -c local -i localhost, site.yml -e with_sim=true -e droneload_repo=$PWD/..`), puis `gz sim -g` pendant que la simu tourne (même `GZ_PARTITION` que dans `sim/.env`).
+- **Linux** : GUI native, fluide avec GPU. Installer Gazebo une fois avec le playbook (`./install/apply.sh sim`), puis `gz sim -g` pendant que la simu tourne (même `GZ_PARTITION` que dans `sim/.env`).
 
 ## Performances
 
@@ -96,7 +96,7 @@ Mesuré sur un Mac Apple Silicon (rendu logiciel) : temps réel ≈ 0,87 (0,65 �
 - **Drone** : `sim/models/droneload_drone/model.sdf`, dérivé de `iris_with_ardupilot` (ardupilot_gazebo) avec en plus les caméras et le lidar du MTF-01. Géométrie, masse et poussée sont encore celles de l'iris (vrai drone : F450, moteurs 2216 920 KV, hélices 1045) : à recaler quand le drone sera pesé.
 - **Paramètres autopilote** : `config/ardupilot/drone.parm` (communs avec le vrai drone) et `sitl.parm` (spécifiques SITL). Les paramètres changés depuis QGC sont perdus au redémarrage du SITL : reportez-les dans les fichiers.
 - **Version d'ArduPilot** : `ARDUPILOT_TAG` dans `sim/.env`, puis `docker compose build sitl`. Elle doit correspondre au firmware de la Pixhawk.
-- **Dépendances** : tout s'installe via `install/` (Ansible), utilisé par les Dockerfiles de `sim/docker/` et, plus tard, par la Pi. Ajouter une dépendance Python dans `install/requirements.txt` (version figée), puis `docker compose build`.
+- **Dépendances** : tout s'installe via `install/` (Ansible), utilisé par les Dockerfiles de `sim/docker/` et par la Pi. Ajouter le paquet (apt ou pip, version figée) dans `install/packages.yml`, puis `docker compose build` (voir `install/README.md`).
 
 ## Plusieurs personnes sur la même machine
 
