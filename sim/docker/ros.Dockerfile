@@ -1,4 +1,4 @@
-# Images ROS 2 de la simulation. Toute l'installation passe par provision/ (Ansible) :
+# Images ROS 2 de la simulation. Toute l'installation passe par install/ (Ansible) :
 # même procédure que sur un PC Linux, et plus tard sur la Pi.
 #   base : ROS 2 Jazzy, MAVROS, Foxglove bridge, venv  -> companion, mavros, foxglove
 #   sim  : base + Gazebo Harmonic + plugin ArduPilot    -> gz-server, bridge
@@ -11,16 +11,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ansible-core \
     && rm -rf /var/lib/apt/lists/*
-COPY provision /opt/provision
-RUN ansible-playbook -c local -i localhost, /opt/provision/site.yml \
+COPY install /opt/install
+RUN ansible-playbook -c local -i localhost, /opt/install/site.yml \
     && rm -rf /var/lib/apt/lists/*
-COPY docker/entrypoint.sh /entrypoint.sh
+COPY sim/docker/entrypoint.sh /entrypoint.sh
 WORKDIR /workspace
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
 
 FROM base AS sim
-RUN ansible-playbook -c local -i localhost, /opt/provision/site.yml -e with_sim=true \
+RUN ansible-playbook -c local -i localhost, /opt/install/site.yml -e with_sim=true \
     && rm -rf /var/lib/apt/lists/*
 
 FROM sim AS gui

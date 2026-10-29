@@ -1,4 +1,4 @@
-# Paramètres ArduCopter communs au vrai drone et au SITL.
+# Paramètres ArduCopter communs au vrai drone et au SITL (config/ardupilot/).
 # Ordre de chargement en SITL : copter.parm (défauts ArduPilot) -> drone.parm -> sitl.parm.
 #
 # ATTENTION : fichier pas encore aligné sur la Pixhawk. Avant de le charger sur le vrai drone,

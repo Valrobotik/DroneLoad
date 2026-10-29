@@ -1,4 +1,4 @@
-# Simulation DroneLoad. À lancer depuis la racine du repo (voir docs/simulation.md).
+# Simulation DroneLoad. À lancer depuis le dossier sim/ (voir docs/simulation.md).
 #   Mac         : docker compose up -d
 #   Linux       : docker compose -f compose.yml -f compose.linux.yml up -d
 #   Linux + GPU : ajouter -f compose.gpu.yml
@@ -6,12 +6,15 @@
 #
 # Tous les services partagent l'espace réseau de gz-server (Linux : celui de l'hôte) :
 # ils se parlent sur 127.0.0.1, sans aucune IP fixe.
+# Le contexte de build et /workspace sont la racine du repo (..).
+
+name: droneload
 
 x-ros: &ros
   image: droneload-base
   build: &build-base
-    context: .
-    dockerfile: docker/ros.Dockerfile
+    context: ..
+    dockerfile: sim/docker/ros.Dockerfile
     target: base
   network_mode: service:gz-server
   # Mémoire partagée commune : DDS transporte les images par mémoire partagée entre conteneurs
@@ -21,12 +24,12 @@ x-ros: &ros
     ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
     GZ_PARTITION: ${GZ_PARTITION:-droneload}
   volumes:
-    - .:/workspace
+    - ..:/workspace
   init: true
 
 x-build-sim: &build-sim
-  context: .
-  dockerfile: docker/ros.Dockerfile
+  context: ..
+  dockerfile: sim/docker/ros.Dockerfile
   target: sim
 
 services:
@@ -39,7 +42,7 @@ services:
     environment: *ros-env
     ipc: shareable
     volumes:
-      - .:/workspace
+      - ..:/workspace
     init: true
     ports:
       - "127.0.0.1:5760:5760"   # MAVLink TCP (QGroundControl)
@@ -52,19 +55,19 @@ services:
   sitl:
     image: droneload-sitl:${ARDUPILOT_TAG}
     build:
-      context: .
-      dockerfile: docker/sitl.Dockerfile
+      context: ..
+      dockerfile: sim/docker/sitl.Dockerfile
       args:
         ARDUPILOT_TAG: ${ARDUPILOT_TAG}
     network_mode: service:gz-server
     depends_on: [gz-server]
     volumes:
-      - ./autopilot:/workspace/autopilot:ro
+      - ../config:/workspace/config:ro
     init: true
     command: >
       arducopter --model JSON --sim-address 127.0.0.1 --speedup 1 -I0 -w
       --home 45.7838,4.8722,170,0
-      --defaults /opt/ardupilot/params/copter.parm,/workspace/autopilot/params/drone.parm,/workspace/autopilot/params/sitl.parm
+      --defaults /opt/ardupilot/params/copter.parm,/workspace/config/ardupilot/drone.parm,/workspace/config/ardupilot/sitl.parm
       --serial0 tcp:0
       --serial1 udpclient:127.0.0.1:14550
 
@@ -93,7 +96,7 @@ services:
     network_mode: service:gz-server
     depends_on: [gz-server]
     volumes:
-      - ./sim/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
 
   foxglove:
     <<: *ros
@@ -105,8 +108,8 @@ services:
     <<: *ros
     image: droneload-gui
     build:
-      context: .
-      dockerfile: docker/ros.Dockerfile
+      context: ..
+      dockerfile: sim/docker/ros.Dockerfile
       target: gui
     profiles: [gui]
-    command: /workspace/docker/gui.sh
+    command: /workspace/sim/docker/gui.sh

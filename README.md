@@ -12,7 +12,7 @@ Code embarqué du drone de l'équipe Valrobotik pour le concours **DroneLoad** (
 ## Arborescence
 
 ```
-droneload/           code embarqué (Raspberry Pi)
+drone/               code embarqué (Raspberry Pi)
   main.py            boucle principale cadencée par la caméra
   config.py          IP, ports, MAVLink, caméra, chemin du modèle
   mavlink.py         DroneController (pymavlink) + DummyDroneController
@@ -21,14 +21,17 @@ droneload/           code embarqué (Raspberry Pi)
   mqtt_server.py     commandes et télémétrie MQTT
   tasks/             épreuves (machines à états, non bloquantes)
   vision/            ArUco (pas encore branché)
+  tools/             scripts autonomes (calibration caméra)
+  requirements.txt
 ground/              PC de pilotage : dashboard MQTT + lanceur (macOS, Linux, Windows)
-tools/               scripts autonomes (calibration caméra)
+  requirements.txt
+sim/                 simulation (Docker Compose) : monde Gazebo, modèle du drone, bridge, test de fumée
+  docker/            Dockerfiles
+config/              configuration des équipements
+  ardupilot/         paramètres ArduPilot (communs réel/SITL + spécifiques SITL)
+                     (à venir : elrs/, radio/)
+install/             installation Ansible des ordinateurs (images Docker, PC Linux, plus tard la Pi)
 models/              modèle YOLO entraîné (best.pt + export NCNN)
-sim/                 simulation : monde Gazebo, modèle du drone, bridge, test de fumée
-autopilot/params/    paramètres ArduPilot versionnés (communs réel/SITL + spécifiques SITL)
-provision/           installation Ansible (images Docker, PC Linux, plus tard la Pi)
-docker/              Dockerfiles de la simulation
-compose*.yml         services de la simulation (Docker Compose)
 docs/                documentation (simulation)
 ```
 
@@ -37,14 +40,14 @@ docs/                documentation (simulation)
 Sur le Raspberry Pi, il faut un broker MQTT local (mosquitto) sur 127.0.0.1:1883 et une version d'OpenCV compilée avec GStreamer :
 ```bash
 python3 -m venv .venv --system-site-packages   # pour récupérer l'OpenCV système avec GStreamer
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -r drone/requirements.txt
 ```
 
 ### PC de pilotage
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements-ground.txt     # Windows : .venv\Scripts\pip
+.venv/bin/pip install -r ground/requirements.txt     # Windows : .venv\Scripts\pip
 ```
 
 Le flux vidéo nécessite GStreamer (`gst-launch-1.0`) :
@@ -61,10 +64,10 @@ Vérification : `gst-inspect-1.0 rtpjpegdepay` doit décrire l'élément.
 
 Sur le Pi, depuis la racine du repo :
 ```bash
-python -m droneload                 # vol réel : MAVLink sur /dev/ttyAMA0 @ 921600
-python -m droneload --sim           # SITL : udp:127.0.0.1:14550
-python -m droneload --no-pixhawk    # vision seule, aucune commande MAVLink
-python -m droneload --pc-ip 192.168.2.9   # change la destination du flux vidéo
+python -m drone                 # vol réel : MAVLink sur /dev/ttyAMA0 @ 921600
+python -m drone --sim           # SITL : udp:127.0.0.1:14550
+python -m drone --no-pixhawk    # vision seule, aucune commande MAVLink
+python -m drone --pc-ip 192.168.2.9   # change la destination du flux vidéo
 ```
 
 Sur le PC, depuis la racine du repo :
@@ -73,12 +76,13 @@ Sur le PC, depuis la racine du repo :
 ```
 Le script ouvre la fenêtre vidéo GStreamer (UDP 5000) et lance le dashboard dans le terminal. Sur macOS, `ground/dashboard.command` fait la même chose en double-clic.
 
-Les valeurs par défaut (IP, ports, résolution, modèle) sont dans `droneload/config.py`.
+Les valeurs par défaut (IP, ports, résolution, modèle) sont dans `drone/config.py`.
 
 ## Simulation
 
 ArduPilot SITL + Gazebo + ROS 2 dans Docker, identique sur Mac et Linux. Voir [docs/simulation.md](docs/simulation.md).
 ```bash
+cd sim
 docker compose up -d
 docker compose exec companion bash -lc 'python3 sim/scripts/smoke_test.py'
 ```

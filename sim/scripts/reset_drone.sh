@@ -1,8 +1,9 @@
 #!/bin/bash
 # Remet le drone à sa position de départ sans relancer la simu :
 # replace le modèle dans Gazebo, puis redémarre le SITL (EKF et paramètres repartent de zéro).
-# À lancer depuis la racine du repo, drone posé et désarmé : ./sim/scripts/reset_drone.sh
+# Drone posé et désarmé : ./sim/scripts/reset_drone.sh (depuis la racine) ou ./scripts/reset_drone.sh (depuis sim/)
 set -e
+cd "$(dirname "$0")/.."   # dossier du compose.yml
 # Pose de départ : même valeur que l'<include> du drone dans sim/worlds/voliere.sdf
 POSE='name: "drone", position: {x: -3.75, y: -1.5, z: 0.195}, orientation: {w: 1}'
 

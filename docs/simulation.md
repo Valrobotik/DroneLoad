@@ -7,7 +7,7 @@ La simulation fait tourner le vrai autopilote (ArduPilot SITL), un monde Gazebo 
 | OS des conteneurs | Ubuntu 24.04 |
 | ROS 2 | Jazzy |
 | Simulateur | Gazebo Harmonic (fourni par `ros-jazzy-ros-gz`) |
-| Autopilote | ArduCopter SITL, tag `ARDUPILOT_TAG` dans `.env` |
+| Autopilote | ArduCopter SITL, tag `ARDUPILOT_TAG` dans `sim/.env` |
 | Liaison ROS 2 ↔ autopilote | MAVROS |
 
 ## Prérequis
@@ -18,9 +18,10 @@ La simulation fait tourner le vrai autopilote (ArduPilot SITL), un monde Gazebo 
 
 ## Lancer
 
-**Toutes les commandes se lancent à la racine du repo.** Le repo est monté dans les conteneurs (`/workspace`) : une modification de code est visible sans reconstruire.
+**Toutes les commandes `docker compose` se lancent depuis le dossier `sim/`** (celui de `compose.yml`). Le repo entier est monté dans les conteneurs (`/workspace`) : une modification de code est visible sans reconstruire.
 
 ```bash
+cd sim
 docker compose build                 # la première fois : 20-40 min (compilation d'ArduPilot)
 docker compose up -d                 # Mac / Windows
 docker compose -f compose.yml -f compose.linux.yml up -d                     # Linux
@@ -34,7 +35,7 @@ Vérifier que tout marche avec le test de fumée (décollage à 1 m mesuré au l
 docker compose exec companion bash -lc 'python3 sim/scripts/smoke_test.py'
 ```
 
-Ouvrir un shell ROS 2 dans la simu (l'environnement ROS 2 est chargé par le shell ; pour une commande isolée, passer par `bash -lc '...'`) :
+Ouvrir un shell ROS 2 dans la simu (l'environnement ROS 2 est chargé par le shell ; pour une commande isolée, passer par `bash -lc '...'`). Dans les conteneurs, le dossier courant est la racine du repo :
 ```bash
 docker compose exec companion bash
 ros2 topic list
@@ -46,7 +47,7 @@ ros2 topic hz /camera/image_raw
 | Service | Rôle |
 |---|---|
 | `gz-server` | Gazebo headless, monde `sim/worlds/voliere.sdf` |
-| `sitl` | ArduCopter ; paramètres `autopilot/params/*.parm`, rechargés à chaque démarrage |
+| `sitl` | ArduCopter ; paramètres `config/ardupilot/*.parm`, rechargés à chaque démarrage |
 | `mavros` | MAVLink ↔ ROS 2 (`/mavros/...`) |
 | `bridge` | capteurs Gazebo → ROS 2 (`sim/bridge.yaml`) |
 | `companion` | conteneur de développement (le futur code ROS 2 tourne ici) |
@@ -83,7 +84,7 @@ Le PC n'a pas besoin de ROS 2.
 ## Vue 3D
 
 - **Mac / Windows** : `docker compose --profile gui up -d gz-gui` puis http://localhost:6901. Le rendu est logiciel (5-10 FPS), suffisant pour vérifier une scène. Fermer la GUI pendant les tests de vision : elle consomme du CPU.
-- **Linux** : GUI native, fluide avec GPU. Installer Gazebo une fois avec le playbook (`cd provision && sudo ansible-playbook -c local -i localhost, site.yml -e with_sim=true -e droneload_repo=$PWD/..`), puis `gz sim -g` pendant que la simu tourne (même `GZ_PARTITION` que dans `.env`).
+- **Linux** : GUI native, fluide avec GPU. Installer Gazebo une fois avec le playbook (`cd install && sudo ansible-playbook -c local -i localhost, site.yml -e with_sim=true -e droneload_repo=$PWD/..`), puis `gz sim -g` pendant que la simu tourne (même `GZ_PARTITION` que dans `sim/.env`).
 
 ## Performances
 
@@ -93,9 +94,9 @@ Mesuré sur un Mac Apple Silicon (rendu logiciel) : temps réel ≈ 0,87 (0,65 �
 
 - **Monde** : `sim/worlds/voliere.sdf`. Les ArUco (DICT_4X4_50) sont des textures de `sim/models/aruco_markers/`, régénérables avec `python sim/tools/generate_aruco.py`.
 - **Drone** : `sim/models/droneload_drone/model.sdf`, dérivé de `iris_with_ardupilot` (ardupilot_gazebo) avec en plus les caméras et le lidar du MTF-01. Géométrie, masse et poussée sont encore celles de l'iris (vrai drone : F450, moteurs 2216 920 KV, hélices 1045) : à recaler quand le drone sera pesé.
-- **Paramètres autopilote** : `autopilot/params/drone.parm` (communs avec le vrai drone) et `sitl.parm` (spécifiques SITL). Les paramètres changés depuis QGC sont perdus au redémarrage du SITL : reportez-les dans les fichiers.
-- **Version d'ArduPilot** : `ARDUPILOT_TAG` dans `.env`, puis `docker compose build sitl`. Elle doit correspondre au firmware de la Pixhawk.
-- **Dépendances** : tout s'installe via `provision/` (Ansible), utilisé par les Dockerfiles et, plus tard, par la Pi. Ajouter une dépendance Python dans `provision/requirements.txt` (version figée), puis `docker compose build`.
+- **Paramètres autopilote** : `config/ardupilot/drone.parm` (communs avec le vrai drone) et `sitl.parm` (spécifiques SITL). Les paramètres changés depuis QGC sont perdus au redémarrage du SITL : reportez-les dans les fichiers.
+- **Version d'ArduPilot** : `ARDUPILOT_TAG` dans `sim/.env`, puis `docker compose build sitl`. Elle doit correspondre au firmware de la Pixhawk.
+- **Dépendances** : tout s'installe via `install/` (Ansible), utilisé par les Dockerfiles de `sim/docker/` et, plus tard, par la Pi. Ajouter une dépendance Python dans `install/requirements.txt` (version figée), puis `docker compose build`.
 
 ## Plusieurs personnes sur la même machine
 
@@ -107,7 +108,7 @@ Sur Mac, les ports publiés sont les mêmes : une seule simu à la fois par mach
 
 ## Dépannage
 
-- **Remettre le drone au départ** : le monde n'est pas réinitialisé entre deux vols. Drone posé et désarmé, `./sim/scripts/reset_drone.sh` le replace sur l'ArUco 0 et redémarre le SITL (prêt à armer ~30 s plus tard). Pour tout remettre à zéro : `docker compose down && docker compose up -d`.
+- **Remettre le drone au départ** : le monde n'est pas réinitialisé entre deux vols. Drone posé et désarmé, `./scripts/reset_drone.sh` (depuis `sim/`) le replace sur l'ArUco 0 et redémarre le SITL (prêt à armer ~30 s plus tard). Pour tout remettre à zéro : `docker compose down && docker compose up -d`.
 
 - **`docker compose build` échoue sur le SITL** : vérifier que `ARDUPILOT_TAG` existe (`git ls-remote --tags https://github.com/ArduPilot/ardupilot.git | grep Copter-`).
 - **Le test de fumée reste bloqué à l'armement** : `docker compose logs sitl` et, dans QGC, les messages de pré-armement.

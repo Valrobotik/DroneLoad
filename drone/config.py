@@ -1,7 +1,7 @@
 """Paramètres du drone regroupés en un seul endroit."""
 from pathlib import Path
 
-# Racine du repo (droneload/ est un sous-dossier)
+# Racine du repo (drone/ est un sous-dossier)
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
 # --- Réseau ---

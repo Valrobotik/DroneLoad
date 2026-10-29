@@ -16,7 +16,7 @@ RUN git clone --depth 1 --branch "${ARDUPILOT_TAG}" --recurse-submodules --shall
         https://github.com/ArduPilot/ardupilot.git /ardupilot
 WORKDIR /ardupilot
 # Correctifs du simulateur pas encore dans le tag : appliqués s'ils manquent, ignorés s'ils y sont déjà
-COPY docker/patches /patches
+COPY sim/docker/patches /patches
 RUN for p in /patches/*.patch; do \
         git apply --reverse --check "$p" 2>/dev/null || git apply "$p"; \
     done

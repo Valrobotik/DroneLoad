@@ -17,6 +17,7 @@ from sensor_msgs.msg import Image, Range
 TAKEOFF_ALT = 1.0      # m au-dessus du sol, mesuré par le lidar (référence d'ArduPilot en intérieur)
 ALT_TOLERANCE = 0.2    # m
 HOVER_TIME = 5.0       # s
+SETTLE_TIME = 3.0      # s : le drone dépasse un peu la cible au décollage avant de se stabiliser
 MAVLINK_RANGEFINDER = 173  # id du message RANGEFINDER, publié sur /mavros/rangefinder/rangefinder
 # Origine EKF fictive (INSA Lyon) : sans GPS, ArduPilot en a besoin pour le mode GUIDED
 ORIGIN = (45.7838, 4.8722, 170.0)
@@ -125,6 +126,7 @@ def main():
             return 1
         step(f"altitude {TAKEOFF_ALT} m atteinte",
              node.wait_for(node.at_takeoff_alt, 30))
+        node.wait_for(lambda: False, SETTLE_TIME)
         step(f"vol stationnaire {HOVER_TIME:.0f} s", node.hover_ok())
         node.call(node.set_mode, SetMode.Request(custom_mode="LAND"))
         step("atterrissage et désarmement", node.wait_for(lambda: not node.state.armed, 60))
