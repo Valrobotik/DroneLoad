@@ -33,6 +33,7 @@ config/              configuration des équipements
 install/             installation Ansible des ordinateurs (images Docker, PC Linux, plus tard la Pi)
 models/              modèle YOLO entraîné (best.pt + export NCNN)
 docs/                documentation (simulation)
+.github/             règles de contribution : contrôle des PR, hook et modèle de commit
 ```
 
 ## Installation
@@ -96,6 +97,36 @@ docker compose exec companion bash -lc 'python3 sim/scripts/smoke_test.py'
 | `drone/logs` | Pi → PC | texte |
 | `drone/telemetry` | Pi → PC | JSON envoyé chaque seconde (fps, cpu, ram, mode, batterie, état de l'ESP32) |
 | `robot/ping` | ESP32 → Pi | heartbeat ; l'ESP32 est considéré déconnecté après 4 s sans ping |
+
+## Contribuer
+
+Le travail est suivi dans les issues et le Project GitHub. Règles :
+
+- **Une branche par issue**, nommée `<numéro>-titre`. Le plus simple est de la créer depuis l'issue (bouton « Create a branch ») ou avec :
+  ```bash
+  gh issue develop <numéro> --checkout
+  ```
+- **Pas de push direct sur `main`.** Tout passe par une pull request depuis la branche de l'issue, avec `Closes #<numéro>` dans la description. La PR doit être **validée par un autre membre** avant d'être fusionnée ; la fusion ferme l'issue.
+- **Chaque commit dit ce qui fonctionne, ce qui ne fonctionne pas et comment il a été testé** :
+  ```
+  Décollage depuis le topic /vol/cmd
+
+  Fonctionne : décollage et vol stationnaire à 1 m
+  Ne fonctionne pas : l'atterrissage dérive de 20 cm
+  Testé : simu
+  ```
+  `Testé` vaut `simu`, `réel`, `simu+réel` ou `non`. Si tout marche, écrire `Ne fonctionne pas : rien`.
+
+À faire une fois après le clone, pour avoir le modèle de commit et la vérification avant chaque commit :
+```bash
+git config core.hooksPath .github/hooks
+git config commit.template .github/gitmessage
+```
+Les mêmes règles sont vérifiées automatiquement sur chaque PR ; une PR qui ne les respecte pas ne peut pas être fusionnée.
+
+Cycle d'une issue dans le Project : **Todo** → **In progress** (on commence) → PR ouverte → validation → **Done** (fermée par la fusion).
+
+Pour les issues sans code (mécanique, rapport, tests, réunions) : on note le résultat dans l'issue et on passe son Status à **À valider**. C'est **un autre membre** qui vérifie, remplit « Validé par » et ferme l'issue.
 
 ## Sécurité
 

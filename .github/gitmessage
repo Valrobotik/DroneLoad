@@ -1,0 +1,10 @@
+
+
+Fonctionne :
+Ne fonctionne pas :
+Testé :
+# Ligne 1 : résumé court de ce que fait le commit.
+# Fonctionne : ce qui marche après ce commit.
+# Ne fonctionne pas : ce qui ne marche pas encore (« rien » si tout marche).
+# Testé : simu | réel | simu+réel | non
+# Les lignes qui commencent par « # » sont ignorées.

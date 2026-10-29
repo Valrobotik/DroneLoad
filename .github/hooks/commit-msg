@@ -1,0 +1,41 @@
+#!/bin/sh
+# Vérifie qu'un message de commit contient les lignes obligatoires :
+#   Fonctionne : ...
+#   Ne fonctionne pas : ...
+#   Testé : simu | réel | simu+réel | non
+# Utilisé comme hook local (git config core.hooksPath .github/hooks)
+# et par le contrôle automatique des PR (.github/workflows/regles.yml).
+# Usage : commit-msg <fichier contenant le message>
+
+msg=$(grep -v '^#' "$1")
+
+# commits de fusion et de revert : pas de contrôle
+first=$(printf '%s\n' "$msg" | sed -n '1p')
+case "$first" in
+    Merge*|Revert*) exit 0 ;;
+esac
+
+erreurs=""
+printf '%s\n' "$msg" | grep -Eiq '^Fonctionne *: *[^ ]' ||
+    erreurs="$erreurs\n  - ligne « Fonctionne : ... » absente ou vide"
+printf '%s\n' "$msg" | grep -Eiq '^Ne fonctionne pas *: *[^ ]' ||
+    erreurs="$erreurs\n  - ligne « Ne fonctionne pas : ... » absente ou vide (mettre « rien » si tout marche)"
+if ! printf '%s\n' "$msg" | grep -Eiq '^Test(é|e) *:'; then
+    erreurs="$erreurs\n  - ligne « Testé : ... » absente"
+elif ! printf '%s\n' "$msg" | grep -Eiq '^Test(é|e) *: *(simu|r(é|e)el|simu *\+ *r(é|e)el|non) *$'; then
+    erreurs="$erreurs\n  - « Testé » doit valoir simu, réel, simu+réel ou non"
+fi
+
+if [ -n "$erreurs" ]; then
+    printf 'Message de commit refusé :%b\n\n' "$erreurs" >&2
+    cat >&2 <<'EOF'
+Format attendu :
+
+    Résumé court
+
+    Fonctionne : ce qui marche
+    Ne fonctionne pas : ce qui ne marche pas (ou « rien »)
+    Testé : simu | réel | simu+réel | non
+EOF
+    exit 1
+fi
