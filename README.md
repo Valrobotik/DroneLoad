@@ -21,8 +21,8 @@ drone/               code embarqué (Raspberry Pi)
   mqtt_server.py     commandes et télémétrie MQTT
   tasks/             épreuves (machines à états, non bloquantes)
   vision/            ArUco (pas encore branché)
-  tools/             scripts autonomes (calibration caméra)
   requirements.txt
+tools/               scripts autonomes (calibration caméra)
 ground/              PC de pilotage : dashboard MQTT + lanceur (macOS, Linux, Windows)
   requirements.txt
 sim/                 simulation (Docker Compose) : monde Gazebo, modèle du drone, bridge, test de fumée
