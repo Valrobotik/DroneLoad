@@ -90,6 +90,29 @@ Le PC n'a pas besoin de ROS 2.
 
 Mesuré sur un Mac Apple Silicon (rendu logiciel) : temps réel ≈ 0,87 (0,65 à 0,8 avec la GUI ouverte), caméras ≈ 12 Hz au lieu des 15 Hz réglés. Les performances de vision se valident sur le vrai drone, pas en simu. Mesures : `ros2 topic hz /camera/image_raw` (dans `companion`), `gz topic -f -t /camera/image_raw` (dans `gz-server`).
 
+## Limites de la Pi
+
+Par défaut, `companion` utilise tout le PC : un code qui tient le temps réel en simu peut décrocher sur la Pi 5. Trois façons de lancer, de la plus rapide à la plus fidèle :
+
+| Mode | Lancement | Fidélité |
+|---|---|---|
+| Sans limites | `docker compose up -d` | aucune, pour développer |
+| Limites Pi simulées | `docker compose -f compose.yml -f compose.pi.yml up -d` (Linux : `compose.linux.yml` avant `compose.pi.yml`) | approchée : CPU et RAM |
+| Code sur la vraie Pi | simu sur un PC Linux, code sur la Pi (voir plus bas) | complète |
+
+**Ce que `compose.pi.yml` reproduit** : la RAM (`PI_MEM`, sans swap) et un budget CPU total (`PI_CPUS`, dans `sim/.env`). Seul `companion` est limité : Gazebo, le SITL et le bridge représentent le monde extérieur. MAVROS, qui tournera aussi sur la Pi, n'est pas compté (charge faible).
+
+**Ce qu'il ne reproduit pas** : la vitesse d'un cœur (un cœur de PC ou de Mac va plus vite qu'un Cortex-A76 ; une boucle sur un seul thread reste donc plus rapide qu'en vrai), l'AI HAT Hailo (pas d'émulateur), la baisse de fréquence quand la Pi chauffe, la carte SD, l'UART et l'USB. Sur Mac Apple Silicon, le conteneur est en arm64 comme la Pi ; sur PC x86, émuler l'arm64 fausserait les temps.
+
+**Régler `PI_CPUS`** avec `sim/scripts/bench_cpu.py` (détection ArUco sur des images 640×480, 1 puis 4 cœurs) :
+1. Sur la Pi : `python3 sim/scripts/bench_cpu.py`, noter les images/s sur 4 cœurs.
+2. Simu lancée avec `compose.pi.yml` : `docker compose exec companion bash -lc 'python3 sim/scripts/bench_cpu.py --ref <images/s de la Pi>'`. Le script donne un `PI_CPUS` conseillé.
+3. Reporter la valeur dans `sim/.env` (une seule fois pour l'équipe si tout le monde a le même type de machine, sinon par variable d'environnement), puis `docker compose -f compose.yml -f compose.pi.yml up -d companion`. `PI_CPUS` ne peut pas dépasser le nombre de CPU donnés à Docker.
+
+`docker stats` affiche la consommation de chaque conteneur par rapport à sa limite.
+
+**Code sur la vraie Pi (Pi dans la boucle)** : pas encore outillé, à mettre en place avec la refonte ROS 2 sur la Pi. Principe : la simu tourne sur un PC Linux (réseau de l'hôte, `compose.linux.yml`) sans lancer `companion` ni `mavros`. Sur la Pi, sur le même réseau local et avec le même `ROS_DOMAIN_ID`, le code du drone tourne avec MAVROS connecté au SITL du PC (`fcu_url:=udp://:14550@`, avec le `--serial1` du SITL pointé vers l'IP de la Pi). Les images Gazebo arrivent par DDS sur le réseau, ce qui ajoute de la latence par rapport à la caméra réelle.
+
 ## Modifier la simu
 
 - **Monde** : `sim/worlds/voliere.sdf`. Les ArUco (DICT_4X4_50) sont des textures de `sim/models/aruco_markers/`, régénérables avec `python sim/tools/generate_aruco.py`.

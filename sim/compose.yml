@@ -2,6 +2,7 @@
 #   Mac         : docker compose up -d
 #   Linux       : docker compose -f compose.yml -f compose.linux.yml up -d
 #   Linux + GPU : ajouter -f compose.gpu.yml
+#   Limites Pi  : ajouter -f compose.pi.yml (CPU/RAM du companion plafonnés, voir PI_CPUS dans .env)
 #   Options     : --profile gui (GUI Gazebo web), --profile foxglove
 #
 # Tous les services partagent l'espace réseau de gz-server (Linux : celui de l'hôte) :
