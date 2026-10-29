@@ -1,0 +1,60 @@
+# Contrôle des règles de contribution sur chaque PR vers main (voir README, « Contribuer »).
+name: Règles
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  regles:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCHE: ${{ github.head_ref }}
+      AUTEUR: ${{ github.event.pull_request.user.login }}
+      CORPS: ${{ github.event.pull_request.body }}
+      BASE: ${{ github.event.pull_request.base.sha }}
+      TETE: ${{ github.event.pull_request.head.sha }}
+      # commits antérieurs à la mise en place des règles : non contrôlés
+      DERNIER_COMMIT_AVANT_REGLES: 7f30d798b7046514a767e88d69099bebbeb84f16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Branche liée à une issue
+        run: |
+          perm=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$AUTEUR/permission" -q .permission 2>/dev/null || echo none)
+          probleme() {
+            if [ "$perm" = admin ]; then echo "::warning::$1"; else echo "::error::$1"; exit 1; fi
+          }
+          num=$(printf '%s' "$BRANCHE" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p')
+          if [ -z "$num" ]; then
+            probleme "La branche « $BRANCHE » doit s'appeler <numéro d'issue>-titre (gh issue develop <n> --checkout)."
+          elif ! gh issue view "$num" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            probleme "L'issue #$num (tirée du nom de branche) n'existe pas."
+          elif ! printf '%s' "$CORPS" | grep -q "#$num\b"; then
+            probleme "La description de la PR doit mentionner l'issue (Closes #$num)."
+          fi
+
+      - name: Messages de commit
+        run: |
+          echo ok=1 > /tmp/etat
+          for c in $(git rev-list --no-merges "$BASE..$TETE"); do
+            if git merge-base --is-ancestor "$c" "$DERNIER_COMMIT_AVANT_REGLES" 2>/dev/null; then
+              continue
+            fi
+            git log -1 --format=%B "$c" > /tmp/msg
+            if ! sh .github/hooks/commit-msg /tmp/msg 2>/tmp/err; then
+              echo "::error::Commit $(git log -1 --format='%h %s' "$c") :"
+              cat /tmp/err
+              echo ok=0 > /tmp/etat
+            fi
+          done
+          grep -q ok=1 /tmp/etat

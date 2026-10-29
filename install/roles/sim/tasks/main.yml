@@ -1,0 +1,51 @@
+# Simulation : Gazebo Harmonic (fourni par ros_gz, même version que le bridge) + plugin ardupilot_gazebo.
+# Sert à l'image Docker sim et à un PC Linux qui veut la GUI Gazebo en natif (gz sim -g).
+
+- name: Paquets apt de la simulation (install/packages.yml, section sim) - ros_gz, plugin ArduPilot
+  ansible.builtin.apt:
+    name: "{{ sim.apt }}"
+    update_cache: true
+
+- name: Paquets pip de la simulation (section sim)
+  ansible.builtin.pip:
+    name: "{{ sim.pip }}"
+    virtualenv: "{{ droneload_venv }}"
+    virtualenv_command: python3 -m venv
+    virtualenv_site_packages: true
+  when: sim.pip | length > 0
+
+- name: Sources ardupilot_gazebo
+  ansible.builtin.git:
+    repo: https://github.com/ArduPilot/ardupilot_gazebo.git
+    dest: "{{ ardupilot_gazebo_dir }}/src"
+    version: "{{ ardupilot_gazebo_version }}"
+    depth: 1
+  register: ardupilot_gazebo_src
+
+- name: Compilation et installation d'ardupilot_gazebo
+  ansible.builtin.shell: |
+    set -e
+    . /opt/ros/{{ ros_distro }}/setup.sh
+    cmake -S src -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX={{ ardupilot_gazebo_dir }}
+    cmake --build build -j"$(nproc)"
+    cmake --install build
+  args:
+    chdir: "{{ ardupilot_gazebo_dir }}"
+    executable: /bin/bash
+  environment:
+    GZ_VERSION: harmonic
+  when: ardupilot_gazebo_src.changed
+
+- name: Chemins Gazebo (plugin ArduPilot, modèles et mondes du repo)
+  ansible.builtin.copy:
+    dest: /etc/profile.d/droneload-sim.sh
+    content: |
+      export GZ_VERSION=harmonic
+      export GZ_SIM_SYSTEM_PLUGIN_PATH={{ ardupilot_gazebo_dir }}/lib/ardupilot_gazebo${GZ_SIM_SYSTEM_PLUGIN_PATH:+:$GZ_SIM_SYSTEM_PLUGIN_PATH}
+      export GZ_SIM_RESOURCE_PATH={{ droneload_repo }}/sim/models:{{ droneload_repo }}/sim/worlds:{{ ardupilot_gazebo_dir }}/share/ardupilot_gazebo/models:{{ ardupilot_gazebo_dir }}/share/ardupilot_gazebo/worlds${GZ_SIM_RESOURCE_PATH:+:$GZ_SIM_RESOURCE_PATH}
+    mode: "0644"
+
+- name: Chemins Gazebo dans les shells interactifs non-login
+  ansible.builtin.lineinfile:
+    path: /etc/bash.bashrc
+    line: . /etc/profile.d/droneload-sim.sh

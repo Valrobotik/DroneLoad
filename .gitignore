@@ -9,6 +9,3 @@ __pycache__/
 .idea/
 .vscode/
 .DS_Store
-
-# Claude Code (réglages locaux)
-.claude/settings.local.json

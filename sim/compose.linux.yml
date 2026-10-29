@@ -1,0 +1,15 @@
+# Override Linux : réseau de l'hôte (DDS et gz-transport visibles depuis l'hôte, GUI Gazebo native possible).
+x-host: &host
+  network_mode: host
+
+services:
+  gz-server:
+    <<: *host
+    ports: !reset []
+  sitl: *host
+  mavros: *host
+  bridge: *host
+  companion: *host
+  mqtt: *host
+  foxglove: *host
+  gz-gui: *host
