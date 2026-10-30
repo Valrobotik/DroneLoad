@@ -11,12 +11,15 @@ import cv2
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
-from rclpy.qos import QoSDurabilityPolicy, QoSProfile, qos_profile_sensor_data
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
 
 STATS_PERIOD = 10.0   # s entre deux lignes de log sur le temps d'inférence
+# Image la plus récente seulement : avec la file de 5 de qos_profile_sensor_data, un traitement plus
+# lent que la caméra recevrait la plus ancienne des images en attente (1,5 s de retard mesuré en simu)
+LATEST_IMAGE = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.BEST_EFFORT)
 
 
 class UltralyticsBackend:
@@ -54,7 +57,7 @@ class Vision(Node):
         self.target_class = None
         latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(String, '/mission/target_class', self._on_target_class, latched)
-        self.create_subscription(Image, '/camera/image_raw', self._on_image, qos_profile_sensor_data)
+        self.create_subscription(Image, '/camera/image_raw', self._on_image, LATEST_IMAGE)
         self.det_pub = self.create_publisher(Detection2DArray, '/detections', qos_profile_sensor_data)
         self.img_pub = self.create_publisher(Image, '/camera/annotated', qos_profile_sensor_data)
 

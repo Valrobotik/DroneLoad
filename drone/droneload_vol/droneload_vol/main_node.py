@@ -1,8 +1,9 @@
 """Nœud principal du drone : lit le mode demandé (depuis le dashboard, via mqtt_server) et fait
 avancer la mission correspondante d'un pas à chaque tick (20 Hz).
 
-Modes : attente, takeoff, land, epreuve1, epreuve2. À chaque changement de mode, la mission est
-réinitialisée : une 2e demande de décollage ou d'atterrissage repart du début.
+Modes : attente, takeoff, land, epreuve1, epreuve2. À chaque demande de mode, même identique au
+mode en cours, la mission est réinitialisée : une 2e demande de décollage ou d'atterrissage repart du
+début. Les modes qui ne pilotent pas le drone (attente, epreuve1) le tiennent en stationnaire.
 """
 import rclpy
 from rclpy.node import Node
@@ -55,12 +56,16 @@ class MainNode(Node):
         if msg.data not in MODES:
             self.get_logger().warning(f'Mode inconnu ignoré : {msg.data}')
             return
-        if msg.data == self.mode:
-            return
+        # Une demande du mode en cours le relance aussi (ex. nouveau décollage après un ECHEC)
+        relance = msg.data == self.mode
         self.mode = msg.data
         for mission in (self.decollage, self.atterrissage, self.epreuve1):
             mission.reset()
-        self.get_logger().info(f'Mode : {self.mode}')
+        # Arrête tout de suite la consigne de vitesse du mode précédent (ArduPilot la garde sinon
+        # jusqu'à GUID_TIMEOUT). Pas en takeoff : une consigne de vitesse interrompt la montée GUIDED
+        if self.mode != 'takeoff':
+            self._hover()
+        self.get_logger().info(f'Mode : {self.mode}' + (' (relancé)' if relance else ''))
 
     def _on_target_class(self, msg):
         self.target_class = msg.data
@@ -80,7 +85,21 @@ class MainNode(Node):
         if self.mode == 'epreuve1' and self.target_class:
             self.epreuve1.add_frame({d['class'] for d in self.detections}, self.target_class)
 
+    def _hover(self):
+        """Vol stationnaire, seulement si le drone vole sous notre contrôle."""
+        if self.drone.armed and self.drone.mode == 'GUIDED':
+            self.drone.send_velocity_body(0, 0, 0, 0)
+
     def _tick(self):
+        # Une erreur dans une mission ne doit pas tuer le nœud : le drone reste en stationnaire
+        try:
+            self._step()
+        except Exception as e:
+            self.get_logger().error(f'Erreur dans la mission {self.mode} : {e!r}, stationnaire',
+                                    throttle_duration_sec=1.0)
+            self._hover()
+
+    def _step(self):
         now = self.get_clock().now().nanoseconds / 1e9
         drone = self.drone
 
@@ -91,6 +110,7 @@ class MainNode(Node):
             self.atterrissage.run(drone, now)
             state = self.atterrissage.state
         elif self.mode == 'epreuve1':
+            self._hover()
             if self.target_class and self.epreuve1.run(now):
                 self.get_logger().info(f'Cible trouvée : {self.target_class}, ouverture du crochet')
                 self.hook_pub.publish(Bool(data=True))
@@ -100,9 +120,7 @@ class MainNode(Node):
             run_epreuve2(drone, self.detections if fresh else [], self.image_width)
             state = 'SUIVI'
         else:
-            # Attente : vol stationnaire, seulement si le drone vole sous notre contrôle
-            if drone.armed and drone.mode == 'GUIDED':
-                drone.send_velocity_body(0, 0, 0, 0)
+            self._hover()
             state = 'ATTENTE'
 
         full_state = f'{self.mode}:{state}'

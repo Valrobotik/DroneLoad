@@ -33,11 +33,11 @@ def init_static_interface():
     print(" [4] DÉCOLLAGE         [5] ATTERRISSAGE")
     print(" [O] OUVRIR CROCHET    [C] FERMER CROCHET")
     print(" CIBLES IA : [F] Fleur  [V] Vache (cow)  [D] Chien (dog)  [M] Mouton")
-    print(" [S] Restart Script    [R] Reboot Pi")
+    print(" [S] Restart Script    [R] Reboot Pi           [P] Reboot Pixhawk")
     print(" [X] Éteindre le Pi    [Q] Quitter le Dashboard")
     print("=======================================================================")
-    print(" MODE: ATTENTE    | ESP32: DISCNN | IA: 0  FPS") # Ligne 11
-    print(" CPU: 0% | RAM: 0% | Chrono: 0s | Batterie: N/C") # Ligne 12
+    print(" MISSION: ?               | FCU: ?                 | H: ?   | CROCHET: ?") # Ligne 11
+    print(" ESP32: OFF | CAM/IA: 0/0 FPS | CPU: 0% | RAM: 0% | Batt: N/C") # Ligne 12
     print("==========================================[ DERNIERS LOGS DRONE ]======") # Ligne 13
     print(" -> En attente de logs...") # Ligne 14
     print("") 
@@ -49,12 +49,29 @@ def init_static_interface():
     print("> ", end="", flush=True) # Ligne 21
 
 def update_telemetry_ui():
-    """ Met à jour uniquement les lignes 8 et 9 (Télémétrie) """
-    esp_status = "OK" if telemetry_data["esp_connected"] else "DISCNN"
-    batt_str = f"{telemetry_data['batt_v']}V ({telemetry_data['batt_pct']}/%)" if telemetry_data['batt_v'] != -1 else "N/C"
-    
-    line11 = f" MODE: {telemetry_data['mode'].upper():<10} | ESP32: {esp_status:<6} | IA: {telemetry_data['fps']:<2} FPS"
-    line12 = f" CPU: {telemetry_data['cpu_percent']}% | RAM: {telemetry_data['ram_percent']}% | Chrono: {telemetry_data['flight_time_sec']}s | Batterie: {batt_str}"
+    """ Met à jour uniquement les lignes 11 et 12 (Télémétrie) """
+    t = telemetry_data   # .get : un drone plus ancien n'envoie pas tous les champs
+    esp_status = "OK" if t.get("esp_connected") else "OFF"
+    batt_str = "N/C" if t.get("batt_v", -1) == -1 else f"{t['batt_v']}V" + (f" ({t['batt_pct']}%)" if t.get("batt_pct", -1) != -1 else "")
+    # État réel de la mission (main_node), sinon le dernier mode demandé
+    mission = (t.get("mission") or t.get("mode") or "?").upper()
+    if "fcu_connected" not in t:
+        fcu = "?"
+    elif not t["fcu_connected"]:
+        fcu = "DÉCONNECTÉ"
+    else:
+        fcu = f"{t.get('fcu_mode') or '?'} {'ARMÉ' if t.get('armed') else 'désarmé'}"
+        if t.get('armed') and 'flight_time_sec' in t:   # chrono du vol en cours
+            minutes, seconds = divmod(t['flight_time_sec'], 60)
+            fcu += f" {minutes}:{seconds:02d}"
+    height = f"{t['height']:.2f} m" if t.get("height") is not None else "?"
+    # hook_ready : null = jamais reçu (drone plus ancien ou nœud servo pas encore lancé)
+    crochet = {True: "OK", False: "HS"}.get(t.get("hook_ready"), "?")
+    cam = t.get("cam_fps", "?")
+    cpu = f"{t.get('cpu_percent', 0)}%" + (f" {t['cpu_temp']:.0f}°C" if t.get("cpu_temp") is not None else "")
+
+    line11 = f" MISSION: {mission:<16} | FCU: {fcu:<16} | H: {height:<6} | CROCHET: {crochet}"
+    line12 = f" ESP32: {esp_status:<3} | CAM/IA: {cam}/{t.get('fps', 0)} FPS | CPU: {cpu} | RAM: {t.get('ram_percent', 0)}% | Batt: {batt_str}"
     
     print_at(11, 2, line11)
     print_at(12, 2, line12)
@@ -143,13 +160,21 @@ while True:
     # ------------------------------------------
 
     elif cmd == 'S':
-        client.publish("drone/system", json.dumps({"action": "restart_script"}))
-        log_local("Demande de redémarrage du script Pi 5...")
+        print("\033[21;1H\033[K> Confirmer RESTART du code du drone (O/N) ? ", end="", flush=True)
+        if input().strip().upper() == 'O':
+            client.publish("drone/system", json.dumps({"action": "restart_script"}))
+            log_local("Demande de redémarrage du script Pi 5...")
+        print("\033[21;1H\033[K> ", end="", flush=True)
     elif cmd == 'R':
         print("\033[21;1H\033[K> Confirmer REBOOT du Pi (O/N) ? ", end="", flush=True)
         if input().strip().upper() == 'O':
             client.publish("drone/system", json.dumps({"action": "reboot"}))
         print("\033[21;1H\033[K> ", end="", flush=True) 
+    elif cmd == 'P':
+        print("\033[21;1H\033[K> Confirmer REBOOT de la Pixhawk (O/N) ? ", end="", flush=True)
+        if input().strip().upper() == 'O':
+            client.publish("drone/system", json.dumps({"action": "reboot_fcu"}))
+        print("\033[21;1H\033[K> ", end="", flush=True)
     elif cmd == 'X':
         print("\033[21;1H\033[K> !!! CONFIRMER EXTINCTION PI 5 (O/N) ? ", end="", flush=True)
         if input().strip().upper() == 'O':

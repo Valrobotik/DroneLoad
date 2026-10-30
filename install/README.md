@@ -41,9 +41,20 @@ Le script affiche ce qui a été installé sans passer par `install/` :
 - paquets du venv absents de `packages.yml`, ou dont la version diffère de celle figée ;
 - `pip` hors du venv (`sudo pip`, `pip --user`) ;
 - tout autre venv que `/opt/droneload_venv` (par exemple un `.venv` créé dans le repo), dont les paquets échapperaient au suivi ;
-- fichiers dans `/usr/local/bin`.
+- fichiers dans `/usr/local/bin` ;
+- sur la Pi, une configuration du rôle `pi` défaite (UART de la Pixhawk, console série, caméra, règles udev, groupes `dialout` / `video` / `gpio`, bouton d'alimentation, mises à jour automatiques) ;
+- ce qui se lance tout seul sans venir d'`install/` : services écrits dans `/etc/systemd/system` (hors snaps), `/etc/rc.local`, crontabs, lignes de `.bashrc` / `.profile` / `/etc/profile.d` qui lancent un programme (`python x.py`, `ros2 launch`, `mavproxy`, `nohup`...). Un vieux script relancé à chaque démarrage survivrait aux redémarrages et prendrait le port de la Pixhawk. Les crontabs des utilisateurs ne sont lisibles que par root : vérifiées par le timer, pas par un `check.py` lancé sans `sudo`.
 
-Sur la Pi, il tourne toutes les heures (timer systemd `droneload-check`) et publie les écarts sur `drone/logs`, ce qui les affiche dans le dashboard. Pour voir son dernier résultat : `journalctl -u droneload-check`.
+Sur la Pi, le rôle `pi` installe aussi le service systemd `droneload`, qui lance `drone.launch.py` au démarrage et le relance s'il s'arrête (`restart_script` du dashboard, plantage). Il faut avoir construit `drone/` (`colcon build --symlink-install`) ; `sudo systemctl start droneload` pour le lancer sans redémarrer, `journalctl -u droneload -f` pour ses logs. Le rôle autorise aussi l'utilisateur du repo à lancer `reboot` et `poweroff` sans mot de passe (commandes du dashboard).
+
+Il configure enfin le matériel de la Pi :
+- liaison série vers la Pixhawk (`/dev/ttyAMA0`, GPIO 14/15) : `dtparam=uart0=on` dans `/boot/firmware/config.txt`, pas de console Linux ni de login sur ce port (`cmdline.txt`, `serial-getty@ttyAMA0` masqué) ;
+- caméra CSI : `camera_auto_detect=1` ;
+- bouton d'alimentation de la Pi 5 : appui court = arrêt propre (`/etc/systemd/logind.conf.d/droneload.conf`, même si une session bloque l'arrêt), appui long = coupure forcée ;
+- droits : règles udev `/etc/udev/rules.d/99-droneload.rules` (puces GPIO au groupe `gpio`, `dma_heap` de libcamera au groupe `video`, réservés à root sinon sous Ubuntu), utilisateur du repo dans les groupes `dialout`, `video` et `gpio`.
+ Il coupe aussi les mises à jour automatiques d'Ubuntu (`/etc/apt/apt.conf.d/99droneload-no-auto-upgrades`) : au concours 2026, la Pi ne voyait plus la Pixhawk, même après redémarrage, et rien ne doit changer le système en dehors d'`apply.sh`. Après une modification de `config.txt` ou `cmdline.txt`, `apply.sh` demande de redémarrer la Pi.
+
+Sur la Pi, `check.py` tourne toutes les heures (timer systemd `droneload-check`) et publie les écarts sur `drone/logs`, ce qui les affiche dans le dashboard. Pour voir son dernier résultat : `journalctl -u droneload-check`.
 
 Les paquets apt présents avant la première exécution d'`apply.sh` (le système de base) sont mémorisés dans `/var/lib/droneload/apt-base.txt` et ne sont pas signalés. Il faut donc lancer `apply.sh` juste après avoir flashé la carte, avant toute installation à la main.
 

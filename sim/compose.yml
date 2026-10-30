@@ -65,8 +65,9 @@ services:
     volumes:
       - ../config:/workspace/config:ro
     init: true
+    # Chemin complet : un redémarrage demandé par MAVLink (reboot_fcu) relance le binaire par argv[0]
     command: >
-      arducopter --model JSON --sim-address 127.0.0.1 --speedup 1 -I0 -w
+      /usr/local/bin/arducopter --model JSON --sim-address 127.0.0.1 --speedup 1 -I0 -w
       --home 45.7838,4.8722,170,0
       --defaults /opt/ardupilot/params/copter.parm,/workspace/config/ardupilot/drone.parm,/workspace/config/ardupilot/sitl.parm
       --serial0 tcp:0

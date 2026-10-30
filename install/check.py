@@ -4,6 +4,9 @@
 Compare l'état réel aux listes du repo :
   - paquets apt installés à la main, paquets pip du venv  -> install/packages.yml
   - pip hors venv, autres venvs (ex. .venv du repo), fichiers dans /usr/local/bin (installations à la main)
+  - sur la Pi, configuration du matériel (Pixhawk, caméra, GPIO), du bouton d'alimentation et des mises à jour
+  - ce qui se lance tout seul hors d'install/ (services, crontabs, rc.local, .bashrc...) : un vieux script
+    relancé à chaque démarrage survivrait aux redémarrages et prendrait le port de la Pixhawk
 
 Usage : python3 install/check.py [--mqtt]
   --mqtt : publie aussi le résultat sur drone/logs (affiché par le dashboard)
@@ -11,6 +14,7 @@ Code de sortie 0 si tout est déclaré, 1 sinon. Lancé toutes les heures sur la
 """
 import argparse
 import glob
+import grp
 import json
 import os
 import re
@@ -27,6 +31,14 @@ VENV = Path("/opt/droneload_venv")
 APT_PROCEDURE = {"ansible", "ansible-core", "python3-apt", "ros2-apt-source"}
 PIP_OUTILS = {"pip", "setuptools", "wheel"}
 PIP_PROCEDURE = {"torch", "torchvision"}   # version CPU, installée à part par le rôle common
+BOOT = Path("/boot/firmware")              # carte de démarrage de la Pi (absente ailleurs)
+PORT_PIXHAWK = Path("/dev/ttyAMA0")
+REGLES_UDEV = Path("/etc/udev/rules.d/99-droneload.rules")
+GROUPES = {"dialout": "port de la Pixhawk", "video": "caméra", "gpio": "GPIO du crochet"}
+LOGIND = Path("/etc/systemd/logind.conf.d/droneload.conf")
+SERVICES_INSTALL = {"droneload.service", "droneload-check.service", "droneload-check.timer"}   # rôle pi
+# Commande qui lance un programme : python script.py, ros2 launch/run, mavproxy, nohup, tmux/screen détachés
+LANCEMENT = re.compile(r"\bpython[0-9.]*\s+\S+\.py|\bros2\s+(launch|run)\b|\bmavproxy|\bnohup\b|\b(tmux|screen)\b.*\s-d")
 
 
 def normalise(nom):
@@ -129,6 +141,71 @@ def autres_venvs(profondeur_max=4):
     return sorted(trouves)
 
 
+def config_pi():
+    """Écarts avec la configuration du rôle pi (Pixhawk, caméra, GPIO, mises à jour automatiques)."""
+    if not (BOOT / "config.txt").exists():
+        return []
+    ecarts = []
+    config = (BOOT / "config.txt").read_text()
+    if not re.search(r"^dtparam=uart0=on", config, re.M):
+        ecarts.append("config.txt : dtparam=uart0=on absent (UART de la Pixhawk désactivé)")
+    if not re.search(r"^camera_auto_detect=1", config, re.M):
+        ecarts.append("config.txt : camera_auto_detect=1 absent (caméra CSI non détectée)")
+    if re.search(r"console=(serial0|ttyAMA0)", (BOOT / "cmdline.txt").read_text()):
+        ecarts.append("cmdline.txt : console Linux sur le port de la Pixhawk")
+    if not PORT_PIXHAWK.exists():
+        ecarts.append(f"{PORT_PIXHAWK} absent (redémarrer la Pi après ./install/apply.sh)")
+    if not LOGIND.exists():
+        ecarts.append(f"{LOGIND} absent (bouton d'alimentation : arrêt propre non garanti)")
+    if not REGLES_UDEV.exists():
+        ecarts.append(f"{REGLES_UDEV} absent (GPIO et caméra réservés à root)")
+    utilisateur = INSTALL_DIR.parent.owner()   # celui qui lance le code du drone (rôle pi)
+    for groupe, usage in GROUPES.items():
+        try:
+            membres = grp.getgrnam(groupe).gr_mem
+        except KeyError:
+            membres = []
+        if utilisateur not in membres:
+            ecarts.append(f"{utilisateur} hors du groupe {groupe} (pas d'accès : {usage})")
+    apt = subprocess.run(["apt-config", "dump"], capture_output=True, text=True).stdout
+    if re.search(r'^APT::Periodic::Unattended-Upgrade "[1-9]', apt, re.M):
+        ecarts.append("mises à jour automatiques actives (unattended-upgrades)")
+    return ecarts
+
+
+def lignes_qui_lancent(fichier):
+    """Lignes non commentées d'un fichier de démarrage qui lancent un programme."""
+    try:
+        texte = Path(fichier).read_text(errors="replace")
+    except OSError:   # crontabs illisibles hors root : vérifiées par le timer (root)
+        return []
+    return [f"{fichier} : {ligne.strip()[:100]}" for ligne in texte.splitlines()
+            if not ligne.strip().startswith("#") and LANCEMENT.search(ligne)]
+
+
+def demarrage_auto():
+    """Ce qui se lance tout seul (démarrage, connexion SSH, cron) sans venir d'install/."""
+    trouves = []
+    # Services écrits à la main : fichiers dans /etc/systemd/system (ceux des paquets sont dans /usr/lib)
+    for unite in sorted(glob.glob("/etc/systemd/system/*.service") + glob.glob("/etc/systemd/system/*.timer")
+                        + glob.glob("/home/*/.config/systemd/user/*.service")):
+        nom = Path(unite).name
+        # snap.* : services des snaps d'Ubuntu (lxd...), écrits là par snapd
+        if os.path.isfile(unite) and not os.path.islink(unite) and nom not in SERVICES_INSTALL \
+                and not nom.startswith("snap."):
+            trouves.append(f"service hors install/ : {unite}")
+    if os.access("/etc/rc.local", os.X_OK):
+        trouves.append("/etc/rc.local exécutable (lancé au démarrage)")
+    fichiers = ["/etc/crontab", "/etc/bash.bashrc", "/etc/profile"]
+    fichiers += glob.glob("/etc/cron.d/*") + glob.glob("/var/spool/cron/crontabs/*")
+    fichiers += [f for f in glob.glob("/etc/profile.d/*") if not f.endswith("/droneload.sh")]
+    for maison in glob.glob("/home/*") + ["/root"]:
+        fichiers += [f"{maison}/{nom}" for nom in (".bashrc", ".profile", ".bash_profile", ".bash_login")]
+    for fichier in fichiers:
+        trouves += [f"lancement automatique : {ligne}" for ligne in lignes_qui_lancent(fichier)]
+    return trouves
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--mqtt", action="store_true", help="publie le résultat sur drone/logs")
@@ -137,6 +214,8 @@ def main():
     apt = apt_hors_ansible()
     pip, versions = pip_hors_ansible()
     autres = hors_gestionnaires()
+    pi = config_pi()
+    auto = demarrage_auto()
 
     lignes = []
     if not BASELINE.exists():
@@ -148,15 +227,17 @@ def main():
     if versions:
         lignes.append("pip, version différente de install/packages.yml : " + ", ".join(versions))
     lignes += autres
+    lignes += [f"configuration de la Pi modifiée, relancer ./install/apply.sh : {e}" for e in pi]
+    lignes += auto
 
     if not lignes:
         print("OK : tout ce qui est installé est déclaré dans install/.")
         return 0
-    print("Installé hors Ansible (voir install/README.md) :")
+    print("Écarts avec install/ (voir install/README.md) :")
     for ligne in lignes:
         print("  -", ligne)
     if args.mqtt:
-        message = "[install] installé hors Ansible : " + " | ".join(lignes)
+        message = "[install] écarts avec install/ : " + " | ".join(lignes)
         subprocess.run(["mosquitto_pub", "-t", "drone/logs", "-m", message], check=False)
     return 1
 

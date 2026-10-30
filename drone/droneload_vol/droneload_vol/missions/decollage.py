@@ -2,6 +2,8 @@ RETRY_PERIOD = 1.0     # s entre deux demandes à l'autopilote (mode, armement, 
 TIMEOUT = 60.0         # s pour passer en GUIDED et armer (pré-armements d'ArduPilot, EKF prêt...)
 CLIMB_TIMEOUT = 30.0   # s pour atteindre la hauteur cible une fois armé
 TOLERANCE = 0.05       # m
+LIFTOFF_HEIGHT = 0.3   # m : en dessous, le drone n'a pas encore quitté le sol
+TAKEOFF_RETRY = 5.0    # s sans quitter le sol avant de renvoyer l'ordre (montée normale : ~2,5 s en SITL ; avant DISARM_DELAY, 10 s)
 
 
 class Decollage:
@@ -47,9 +49,10 @@ class Decollage:
 
         elif self.state == 'ARMEMENT':
             if drone.armed:
-                drone.takeoff(self.altitude)
-                self._set_state('MONTEE')
-                self.climb_start = now
+                # Ordre parti seulement si MAVROS est prêt, sinon nouvel essai au tick suivant
+                if drone.takeoff(self.altitude):
+                    self._set_state('MONTEE')
+                    self.climb_start = self.last_request = now
             elif self._retry_due(now):
                 drone.arm()
 
@@ -68,6 +71,12 @@ class Decollage:
                 height = drone.get_current_alt_brute()   # None : hauteur inconnue, on attend
                 if height is not None and height >= self.altitude - TOLERANCE:
                     self._set_state('STATIONNAIRE')
+                elif height is not None and height < LIFTOFF_HEIGHT and now - self.last_request >= TAKEOFF_RETRY:
+                    # Ordre perdu ou refusé : sans renvoi, ArduPilot désarmerait seul au sol (DISARM_DELAY).
+                    # Un renvoi superflu (drone déjà en montée) est simplement refusé par l'autopilote.
+                    self.log.warning(f'[DÉCOLLAGE] toujours au sol ({height:.2f} m), ordre renvoyé')
+                    self.last_request = now
+                    drone.takeoff(self.altitude)
 
         elif self.state == 'STATIONNAIRE':
             drone.send_velocity_body(0, 0, 0, 0)

@@ -12,7 +12,13 @@ Arguments :
   model        modèle YOLO (défaut : models/best_ncnn_model du repo)
 
 Construire avec `colcon build --symlink-install` : le repo est retrouvé depuis ce fichier.
+
+Un seul lancement à la fois sur la machine (verrou) : deux main_node piloteraient le même drone et deux
+mqtt_server (même identifiant MQTT) se déconnecteraient l'un l'autre. Sur la Pi, le service systemd
+droneload tourne déjà : sudo systemctl stop droneload avant un lancement à la main.
 """
+import fcntl
+import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -25,12 +31,30 @@ from launch_ros.actions import Node
 
 PC_IP = '192.168.31.181'        # PC de pilotage sur le réseau du drone
 SIM_PC_IP = 'host.docker.internal'
+RESPAWN_DELAY = 2.0             # s avant de relancer un nœud arrêté
 REPO = Path(__file__).resolve().parents[3]   # drone/droneload_bringup/launch/ -> racine du repo
 MODEL = REPO / 'models' / 'best_ncnn_model'
 CALIBRATION = REPO / 'config' / 'camera' / 'module3_640x480.yaml'   # calibration de la caméra (camera_info)
+LOCK = Path('/tmp/droneload-drone.lock')
+_lock_fd = None   # gardé ouvert tant que le launch tourne (libéré par le système à sa sortie)
+
+
+def prendre_verrou():
+    """Refuse un second lancement du code du drone sur cette machine."""
+    global _lock_fd
+    try:
+        # Sans O_CREAT si le fichier existe : /tmp refuse O_CREAT sur un fichier d'un autre utilisateur
+        fd = os.open(LOCK, os.O_RDONLY) if LOCK.exists() else os.open(LOCK, os.O_RDONLY | os.O_CREAT, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise RuntimeError('Code du drone déjà lancé sur cette machine (service droneload ? '
+                           'sudo systemctl stop droneload avant un lancement à la main ; '
+                           'pgrep -af drone.launch.py pour le trouver)') from None
+    _lock_fd = fd   # non hérité par les nœuds (O_CLOEXEC par défaut en Python)
 
 
 def nodes(context):
+    prendre_verrou()
     sim = context.launch_configurations['sim'] == 'true'
     vision_only = context.launch_configurations['vision_only'] == 'true'
     pc_ip = context.launch_configurations['pc_ip'] or (SIM_PC_IP if sim else PC_IP)
@@ -41,11 +65,12 @@ def nodes(context):
     params = str(Path(get_package_share_directory('droneload_bringup')) / 'config' / 'drone.yaml')
     common = [params, {'use_sim_time': sim}]
 
-    def node(package, executable, **extra):
+    def node(package, executable, respawn=True, **extra):
+        # Un nœud qui plante est relancé (main_node retrouve le dernier mode demandé, conservé)
         return Node(package=package, executable=executable, name=executable, output='screen',
-                    parameters=common + [extra])
+                    parameters=common + [extra], respawn=respawn, respawn_delay=RESPAWN_DELAY)
 
-    mqtt_server = node('droneload_hardware', 'mqtt_server')
+    mqtt_server = node('droneload_hardware', 'mqtt_server', respawn=False)
     actions = [
         node('droneload_vol', 'main_node'),
         node('droneload_vision', 'vision', model_path=model),

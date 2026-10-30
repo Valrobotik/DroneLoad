@@ -1,0 +1,19 @@
+[Unit]
+Description=DroneLoad : code ROS 2 du drone (drone.launch.py)
+Wants=network-online.target
+After=network-online.target mosquitto.service
+# Ne jamais abandonner la relance (paquets pas encore construits, Pixhawk absente...)
+StartLimitIntervalSec=0
+
+[Service]
+User={{ droneload_user }}
+# Shell de login : charge /etc/profile.d/droneload.sh (ROS 2, venv, paquets construits de drone/)
+ExecStart=/bin/bash -lc 'exec ros2 launch droneload_bringup drone.launch.py'
+# restart_script (dashboard) arrête le launch : relancé ici, comme après un plantage
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

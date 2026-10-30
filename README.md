@@ -89,6 +89,10 @@ ros2 launch droneload_bringup drone.launch.py pc_ip:=192.168.2.9    # change la 
 ```
 Nœuds, topics et arguments : [docs/architecture.md](docs/architecture.md).
 
+**Sur la Pi, le code du drone tourne déjà** : le service systemd `droneload` le lance au démarrage et le relance s'il s'arrête. Avant de le lancer à la main, toujours `sudo systemctl stop droneload` (et `sudo systemctl start droneload` après) : deux lancements, c'est deux `main_node` qui pilotent le même drone et deux MAVROS sur `/dev/ttyAMA0` dont aucun ne voit la Pixhawk. Le launch refuse donc de démarrer s'il tourne déjà (verrou `/tmp/droneload-drone.lock`), et refuse de démarrer MAVROS si le port série est déjà ouvert par un autre programme, absent ou inaccessible (signalé toutes les 10 s sur le dashboard). Caméra ou crochet indisponibles : signalés sur le dashboard (`CAM` à 0 images/s, `CROCHET: HS`), nouvel essai toutes les 5 s. Logs du service : `journalctl -u droneload -f`.
+
+**Après chaque redémarrage**, le dashboard affiche un bilan au bout de 20 s (`Démarrage : FCU OK ..., caméra 15/s, IA 6/s, crochet OK, install OK`) ; ce qui manque est en majuscules. Redémarrer la Pi ne redémarre pas la Pixhawk (alimentée à part) : `[P]` dans le dashboard la redémarre. `install/check.py` signale aussi tout ce qui se lance tout seul hors d'`install/` (service, crontab, `.bashrc`...). **Éteindre** : bouton de la Pi 5, appui court (arrêt propre ; appui long = coupure forcée), ou `[X]` dans le dashboard.
+
 Sur le PC, depuis la racine du repo :
 ```bash
 .venv/bin/python ground/launch.py --broker <IP du Pi>    # Windows : .venv\Scripts\python
@@ -113,9 +117,9 @@ docker compose exec companion bash -lc 'python3 sim/scripts/mission_test.py'  # 
 | Topic | Sens | Contenu |
 |---|---|---|
 | `drone/cmd` | PC → Pi | `{"action": "set_mode", "mode": "attente\|takeoff\|land\|epreuve1\|epreuve2"}`, `{"action": "set_class", "class_name": "cow"}`, `{"action": "set_hook", "state": "hook_open\|hook_close"}`, `{"action": "arm"}`, `{"action": "disarm"}` |
-| `drone/system` | PC → Pi | `{"action": "reboot\|restart_script\|shutdown"}` |
+| `drone/system` | PC → Pi | `{"action": "reboot\|restart_script\|shutdown\|reboot_fcu"}` (`reboot_fcu` : redémarre la Pixhawk ; tout est refusé drone armé) |
 | `drone/logs` | Pi → PC | texte |
-| `drone/telemetry` | Pi → PC | JSON envoyé chaque seconde (fps, cpu, ram, mode, batterie, état de l'ESP32) |
+| `drone/telemetry` | Pi → PC | JSON envoyé chaque seconde (images/s de la caméra et de la vision, crochet utilisable, cpu, température, ram, mode demandé et état réel de la mission, autopilote armé et mode, hauteur lidar, batterie, état de l'ESP32) |
 | `robot/ping` | ESP32 → Pi | heartbeat ; l'ESP32 est considéré déconnecté après 4 s sans ping |
 
 ## Contribuer

@@ -4,6 +4,7 @@ Aucune méthode ne bloque : les services MAVROS sont appelés en asynchrone et l
 (mode, armement, distance lidar) est mis à jour par les callbacks. Les missions appellent ces
 méthodes à chaque tick et lisent le résultat aux ticks suivants.
 """
+import math
 import time
 
 from geographic_msgs.msg import GeoPointStamped
@@ -23,6 +24,10 @@ STREAM_TIMEOUT = 1.0
 # Âge maximal (s) d'une mesure lidar : au-delà, la hauteur est inconnue (None), jamais une valeur figée.
 # Le lidar arrive à 20 Hz : 0,5 s = une dizaine de mesures manquées.
 ALT_MAX_AGE = 0.5
+# Plage valide du lidar (m), alignée sur RNGFND1_MIN / RNGFND1_MAX de config/ardupilot/drone.parm :
+# hors plage (inf, nan, 0 quand le MTF-01 perd le sol), la hauteur est inconnue
+LIDAR_MIN = 0.05
+LIDAR_MAX = 8.0
 
 # Masque de PositionTarget : seules les vitesses et la vitesse de lacet sont prises en compte
 VELOCITY_ONLY = (PositionTarget.IGNORE_PX | PositionTarget.IGNORE_PY | PositionTarget.IGNORE_PZ
@@ -38,7 +43,7 @@ class MavrosDrone:
         self.log = node.get_logger()
         self.origin = origin
         self.state = State()
-        self.altitude = None          # distance lidar (m), None tant qu'aucune mesure n'est arrivée
+        self.altitude = None          # distance lidar (m), None sans mesure valide
         self._streams_requested = False
         self._range_time = 0.0          # time.monotonic() de la dernière mesure lidar
         self._streams_time = 0.0        # time.monotonic() de la dernière demande des flux
@@ -70,31 +75,34 @@ class MavrosDrone:
         return self.state.mode
 
     def get_current_alt_brute(self):
-        """Distance lidar (m), ou None si aucune mesure récente (moins de ALT_MAX_AGE).
+        """Distance lidar (m), ou None sans mesure valide récente (moins de ALT_MAX_AGE).
 
         None veut dire « hauteur inconnue » : la mission attend ou s'arrête, elle ne devine pas.
         """
         if self.altitude is None or time.monotonic() - self._range_time > ALT_MAX_AGE:
-            self.log.warning('Hauteur lidar indisponible (pas de mesure récente)', throttle_duration_sec=1.0)
+            self.log.warning('Hauteur lidar indisponible (pas de mesure valide récente)',
+                             throttle_duration_sec=1.0)
             return None
         return self.altitude
 
     # --- Commandes (non bloquantes) ---
+    # Chaque commande renvoie True si la requête est partie (MAVROS prêt) ; la réponse de l'autopilote
+    # arrive plus tard (refus journalisé par _check)
     def set_mode(self, mode):
-        self._call(self.set_mode_client, SetMode.Request(custom_mode=mode), f'mode {mode}')
+        return self._call(self.set_mode_client, SetMode.Request(custom_mode=mode), f'mode {mode}')
 
     def arm(self):
-        self._call(self.arming_client, CommandBool.Request(value=True), 'armement')
+        return self._call(self.arming_client, CommandBool.Request(value=True), 'armement')
 
     def disarm(self):
-        self._call(self.arming_client, CommandBool.Request(value=False), 'désarmement')
+        return self._call(self.arming_client, CommandBool.Request(value=False), 'désarmement')
 
     def takeoff(self, altitude):
-        self._call(self.takeoff_client, CommandTOL.Request(altitude=float(altitude)),
+        return self._call(self.takeoff_client, CommandTOL.Request(altitude=float(altitude)),
                    f'décollage à {altitude} m')
 
     def land(self):
-        self.set_mode('LAND')
+        return self.set_mode('LAND')
 
     def send_velocity_body(self, vx, vy, vz, yaw_rate):
         """Vitesses dans le repère du drone : vx vers l'avant, vy vers la droite, vz vers le bas
@@ -115,8 +123,13 @@ class MavrosDrone:
         self.state = msg
 
     def _on_range(self, msg):
-        self.altitude = msg.range
+        # L'heure est mise à jour même pour une mesure invalide : le flux arrive, inutile de le redemander
         self._range_time = time.monotonic()
+        if math.isfinite(msg.range) and LIDAR_MIN <= msg.range <= LIDAR_MAX:
+            self.altitude = msg.range
+        else:
+            self.altitude = None
+            self.log.warning(f'Mesure lidar hors plage ignorée : {msg.range}', throttle_duration_sec=1.0)
 
     def _housekeeping(self):
         """Toutes les secondes : demande les flux MAVLink et envoie l'origine EKF tant que nécessaire."""

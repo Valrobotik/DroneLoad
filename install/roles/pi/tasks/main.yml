@@ -1,5 +1,5 @@
 # Raspberry Pi 5 (Ubuntu 24.04) : paquets de la section pi de packages.yml, broker MQTT,
-# vérification périodique des installations faites hors d'Ansible.
+# vérification périodique des installations faites hors d'Ansible, service du code du drone.
 
 - name: Paquets apt de la Pi (install/packages.yml, section pi)
   ansible.builtin.apt:
@@ -22,6 +22,21 @@
     mode: "0644"
   notify: Redémarrer mosquitto
 
+- name: Propriétaire du repo (utilisateur qui lance le code du drone)
+  ansible.builtin.stat:
+    path: "{{ droneload_repo }}"
+  register: repo_stat
+
+- name: Utilisateur du code du drone
+  ansible.builtin.set_fact:
+    droneload_user: "{{ repo_stat.stat.pw_name }}"
+
+- name: Code du drone lancé au démarrage (service systemd, relancé s'il s'arrête)
+  ansible.builtin.template:
+    src: droneload.service.j2
+    dest: /etc/systemd/system/droneload.service
+    mode: "0644"
+
 - name: Vérification des installations hors Ansible (service et timer systemd)
   ansible.builtin.template:
     src: "{{ item }}.j2"
@@ -36,10 +51,117 @@
     path: /run/systemd/system
   register: systemd_actif
 
+# Matériel de la Pi : liaison série Pixhawk (/dev/ttyAMA0, GPIO 14/15), caméra CSI, GPIO du crochet.
+# Concours 2026 : la Pi ne voyait plus la Pixhawk, même après redémarrage ; ces réglages ne doivent
+# dépendre ni d'une modif à la main ni d'une mise à jour.
+- name: Carte de démarrage de la Pi présente ? (absente dans les conteneurs de test)
+  ansible.builtin.stat:
+    path: /boot/firmware/config.txt
+  register: boot_pi
+
+- name: UART0 sur GPIO 14/15 (/dev/ttyAMA0 sur Pi 5) et caméra CSI détectée au démarrage
+  ansible.builtin.blockinfile:
+    path: /boot/firmware/config.txt
+    marker: "# {mark} DroneLoad (install/roles/pi) : liaison Pixhawk"
+    block: |
+      [all]
+      dtparam=uart0=on
+      camera_auto_detect=1
+  when: boot_pi.stat.exists
+  register: uart_config
+
+- name: Pas de console Linux sur le port de la Pixhawk
+  ansible.builtin.replace:
+    path: /boot/firmware/cmdline.txt
+    regexp: '\s*console=(serial0|ttyAMA0)\S*'
+    replace: ''
+  when: boot_pi.stat.exists
+  register: uart_cmdline
+
+- name: Pas de login sur le port de la Pixhawk
+  ansible.builtin.systemd_service:
+    name: serial-getty@ttyAMA0.service
+    masked: true
+  when: boot_pi.stat.exists and systemd_actif.stat.exists
+
+- name: Groupe gpio (accès aux puces GPIO, comme sur Raspberry Pi OS)
+  ansible.builtin.group:
+    name: gpio
+    system: true
+  when: boot_pi.stat.exists
+
+- name: Droits sur les GPIO (crochet) et la mémoire d'images de libcamera (dma_heap)
+  ansible.builtin.copy:
+    dest: /etc/udev/rules.d/99-droneload.rules
+    content: |
+      # DroneLoad (install/roles/pi) : sans ces règles, ces périphériques sont réservés à root sous Ubuntu
+      SUBSYSTEM=="gpio", KERNEL=="gpiochip*", GROUP="gpio", MODE="0660"
+      SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660"
+    mode: "0644"
+  when: boot_pi.stat.exists
+  notify: Recharger udev
+
+- name: Accès au port série, à la caméra et aux GPIO pour l'utilisateur du code du drone
+  ansible.builtin.user:
+    name: "{{ droneload_user }}"
+    groups: dialout,video,gpio
+    append: true
+  when: boot_pi.stat.exists
+
+- name: Dossier de configuration de logind
+  ansible.builtin.file:
+    path: /etc/systemd/logind.conf.d
+    state: directory
+    mode: "0755"
+  when: boot_pi.stat.exists
+
+- name: Bouton d'alimentation de la Pi 5 (appui court) = arrêt propre, même si une session le bloque
+  ansible.builtin.copy:
+    dest: /etc/systemd/logind.conf.d/droneload.conf
+    content: |
+      # DroneLoad (install/roles/pi) : appui court sur le bouton = arrêt propre (le code du drone a
+      # TimeoutStopSec du service droneload pour s'arrêter) ; appui long (5 s) = coupure forcée
+      [Login]
+      HandlePowerKey=poweroff
+      PowerKeyIgnoreInhibited=yes
+    mode: "0644"
+  when: boot_pi.stat.exists
+  register: logind_config
+
+- name: Redémarrage nécessaire pour le matériel de la Pi
+  ansible.builtin.debug:
+    msg: "config.txt, cmdline.txt ou logind modifié : redémarrer la Pi (sudo reboot) pour activer /dev/ttyAMA0, la caméra et le bouton"
+  when: uart_config is changed or uart_cmdline is changed or logind_config is changed
+
+- name: Pas de mise à jour automatique (une mise à jour peut changer le système la veille d'un vol)
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/99droneload-no-auto-upgrades
+    content: |
+      // DroneLoad (install/roles/pi) : les mises à jour se font avec ./install/apply.sh
+      APT::Periodic::Update-Package-Lists "0";
+      APT::Periodic::Unattended-Upgrade "0";
+    mode: "0644"
+
+- name: reboot et poweroff sans mot de passe (commandes reboot et shutdown du dashboard)
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/droneload
+    content: |
+      {{ droneload_user }} ALL=(root) NOPASSWD: /usr/sbin/reboot, /usr/sbin/poweroff
+    mode: "0440"
+    validate: visudo -cf %s
+  when: systemd_actif.stat.exists   # sudo absent des conteneurs de test
+
 - name: Activation du timer de vérification
   ansible.builtin.systemd_service:
     name: droneload-check.timer
     enabled: true
     state: started
+    daemon_reload: true
+  when: systemd_actif.stat.exists
+
+- name: Activation du service du drone (démarré au prochain boot ; systemctl start droneload pour l'avoir tout de suite)
+  ansible.builtin.systemd_service:
+    name: droneload.service
+    enabled: true
     daemon_reload: true
   when: systemd_actif.stat.exists
