@@ -15,8 +15,8 @@ Code embarqué du drone de l'équipe Valrobotik pour le concours **DroneLoad** (
 drone/               code embarqué (Raspberry Pi) : workspace ROS 2, voir docs/architecture.md
   droneload_bringup/ lancement (drone.launch.py) et paramètres (drone.yaml)
   droneload_vol/     nœud principal, interface MAVROS, missions (décollage, atterrissage, épreuves)
-  droneload_vision/  caméra, détection YOLO, flux vidéo vers le PC
-  droneload_hardware/ servo du crochet, serveur MQTT (dashboard, ESP32)
+  droneload_vision/  détection YOLO (traitement d'image seulement)
+  droneload_hardware/ entrées/sorties : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT
 tools/               scripts autonomes (calibration caméra -> config/camera/)
 ground/              PC de pilotage : dashboard MQTT + lanceur (macOS, Linux, Windows)
   requirements.txt

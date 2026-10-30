@@ -49,7 +49,8 @@ def nodes(context):
     actions = [
         node('droneload_vol', 'main_node'),
         node('droneload_vision', 'vision', model_path=model),
-        node('droneload_vision', 'gstream', pc_ip=pc_ip),
+        node('droneload_vision', 'aruco'),
+        node('droneload_hardware', 'gstream', pc_ip=pc_ip),
         node('droneload_hardware', 'servo', mock=sim),
         mqtt_server,
         # restart_script (dashboard) arrête mqtt_server : tout le code s'arrête et le service le relance
@@ -57,7 +58,7 @@ def nodes(context):
                                            on_exit=[EmitEvent(event=Shutdown(reason='mqtt_server arrêté'))])),
     ]
     if not sim:
-        actions.append(node('droneload_vision', 'camera', calibration_file=str(CALIBRATION)))
+        actions.append(node('droneload_hardware', 'camera', calibration_file=str(CALIBRATION)))
     if not sim and not vision_only:
         # En simu, la même configuration MAVROS est lancée par le service mavros de sim/compose.yml
         # fcu_url:= passé en ligne de commande arrive directement à mavros.launch.py

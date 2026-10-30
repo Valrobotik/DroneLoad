@@ -17,14 +17,15 @@ drone/
 │       ├── main_node.py          # nœud principal : modes, appel des missions
 │       ├── mavros.py             # MavrosDrone : commandes et état de l'autopilote, sans bloquer
 │       └── missions/             # décollage, atterrissage, épreuve 1, épreuve 2
-├── droneload_vision/
+├── droneload_vision/             # traitement d'image seulement (aucun matériel, testable partout)
 │   └── droneload_vision/
-│       ├── camera.py             # caméra Module 3 (Pi seulement)
 │       ├── vision.py             # détection YOLO
-│       └── gstream.py            # flux vidéo vers le PC
-└── droneload_hardware/
+│       └── aruco.py              # ArUco : identifiant et pose 3D (calibration de /camera/camera_info)
+└── droneload_hardware/           # entrées/sorties du drone : capteurs, actionneurs, liaisons au sol
     └── droneload_hardware/
+        ├── camera.py             # caméra Module 3 (Pi seulement)
         ├── servo.py              # servo du crochet (GPIO 13)
+        ├── gstream.py            # flux vidéo vers le PC
         └── mqtt_server.py        # dashboard et ESP32 (MQTT)
 ```
 
@@ -45,6 +46,7 @@ flowchart LR
     main[main_node]
     cam[camera]
     vis[vision]
+    aru[aruco]
     gst[gstream]
     servo[servo]
     mavros[MAVROS]
@@ -58,6 +60,7 @@ flowchart LR
   mqtt -- /hook/cmd --> servo
   main -- /hook/cmd --> servo
   cam -- /camera/image_raw --> vis
+  cam -- /camera/image_raw<br>/camera/camera_info --> aru
   vis -- /detections --> main
   vis -- /camera/annotated --> gst
   gst -- RTP/JPEG UDP 5000 --> vid
@@ -67,10 +70,12 @@ flowchart LR
 
 | Topic | Type | Publié par | Lu par |
 |---|---|---|---|
-| `/camera/image_raw` | `sensor_msgs/Image` | `camera` (Pi), `bridge` (simu) | `vision` |
-| `/camera/camera_info` | `sensor_msgs/CameraInfo` : calibration (`config/camera/module3_640x480.yaml` sur la Pi, caméra Gazebo de même focale en simu) | `camera` (Pi), `bridge` (simu) | (ArUco, #15) |
+| `/camera/image_raw` | `sensor_msgs/Image` | `camera` (Pi), `bridge` (simu) | `vision`, `aruco` |
+| `/camera/camera_info` | `sensor_msgs/CameraInfo` : calibration (`config/camera/module3_640x480.yaml` sur la Pi, caméra Gazebo de même focale en simu) | `camera` (Pi), `bridge` (simu) | `aruco` |
 | `/detections` | `vision_msgs/Detection2DArray` (`class_id` = nom de la classe) | `vision` | `main_node`, `mqtt_server` (FPS) |
 | `/camera/annotated` | `sensor_msgs/Image` | `vision` | `gstream` |
+| `/aruco/detections` | `vision_msgs/Detection3DArray` : un `Detection3D` par marqueur, `class_id` = identifiant, `results[0].pose.pose` = pose du marqueur en m dans le repère optique de la caméra (x à droite, y vers le bas, z dans l'axe : la distance au sol quand le drone est à plat) | `aruco` | (missions à venir, #15) |
+| `/aruco/annotated` | `sensor_msgs/Image` : marqueurs, axes et position en cm (débogage, Foxglove) | `aruco` | — |
 | `/mission/mode` | `std_msgs/String` : `attente`, `takeoff`, `land`, `epreuve1`, `epreuve2` | `mqtt_server` | `main_node` |
 | `/mission/target_class` | `std_msgs/String` | `mqtt_server` | `main_node`, `vision` |
 | `/mission/state` | `std_msgs/String` : `<mode>:<état>`, par ex. `takeoff:MONTEE` | `main_node` | (journal, Foxglove) |
@@ -89,9 +94,9 @@ Commandes de l'autopilote, toutes envoyées par `MavrosDrone` sans attendre la r
 | décollage | service `/mavros/cmd/takeoff` |
 | vitesse dans le repère du drone | topic `/mavros/setpoint_raw/local`, `FRAME_BODY_NED` |
 | origine EKF (sans GPS, requise par GUIDED) | topic `/mavros/global_position/set_gp_origin` |
-| flux lidar (RANGEFINDER) et batterie (SYS_STATUS), pas envoyés par défaut par ArduPilot | service `/mavros/set_message_interval` |
+| flux lidar (RANGEFINDER) et batterie (SYS_STATUS), pas envoyés par défaut par ArduPilot ; redemandés si le lidar se tait 1 s (autopilote redémarré) | service `/mavros/set_message_interval` |
 
-L'altitude utilisée par les missions est la distance lidar brute du MTF-01 (`/mavros/rangefinder/rangefinder`).
+L'altitude utilisée par les missions est la distance lidar brute du MTF-01 (`/mavros/rangefinder/rangefinder`). `get_current_alt_brute()` renvoie `None` si la dernière mesure a plus de 0,5 s : une mission ne doit jamais deviner une hauteur, elle attend ou s'arrête. (La Pixhawk, elle, lit le lidar directement et tient sa hauteur même si la Pi ne reçoit plus le flux.)
 
 ## Nœud principal et missions
 
@@ -100,7 +105,7 @@ L'altitude utilisée par les missions est la distance lidar brute du MTF-01 (`/m
 | Mode | Mission | États |
 |---|---|---|
 | `attente` | vol stationnaire (vitesse nulle, seulement si le drone est armé en GUIDED) | `ATTENTE` |
-| `takeoff` | `Decollage` : GUIDED, armement, décollage à 1 m, stationnaire | `GUIDED` → `ARMEMENT` → `MONTEE` → `STATIONNAIRE` (ou `ECHEC`) |
+| `takeoff` | `Decollage` : GUIDED, armement, décollage à 1 m, stationnaire ; `ECHEC` si GUIDED/armement refusés 60 s ou hauteur non atteinte en 30 s (le drone reste en stationnaire, l'opérateur fait `land`) | `GUIDED` → `ARMEMENT` → `MONTEE` → `STATIONNAIRE` (ou `ECHEC`) |
 | `land` | `Atterrissage` : mode LAND jusqu'au désarmement | `LAND` → `DESCENTE` → `POSE` |
 | `epreuve1` | `Epreuve1` : cible validée si seule la classe demandée est détectée sur ≥ 80 % des images en 2 s, puis le crochet s'ouvre | `RECHERCHE` → `TROUVEE` |
 | `epreuve2` | `run_epreuve2` : se tourne vers la vache et avance tant qu'elle est centrée | `SUIVI` |
@@ -154,11 +159,11 @@ Ce que lance chaque mode :
 | MAVROS (`mavros.launch.py`) | lancé | — | même fichier, lancé par le service `mavros` de la simu |
 | `camera` | lancé | lancé | — (le `bridge` publie les images) |
 | `servo` | GPIO | GPIO | mock (journal seulement) |
-| `main_node`, `vision`, `gstream`, `mqtt_server` | lancés | lancés | lancés |
+| `main_node`, `vision`, `aruco`, `gstream`, `mqtt_server` | lancés | lancés | lancés |
 
 ## Ajouter un nœud
 
-1. Ajouter le fichier dans le paquet du bon rôle, avec une fonction `main()`.
+1. Ajouter le fichier dans le paquet du bon rôle, avec une fonction `main()` : ce qui touche au matériel ou à une liaison (capteur, actionneur, réseau) va dans `droneload_hardware`, le traitement d'image dans `droneload_vision`, la logique de vol dans `droneload_vol`.
 2. Le déclarer dans `entry_points` du `setup.py` du paquet, et ses dépendances dans `package.xml` (et dans `install/packages.yml` si c'est un paquet apt ou pip).
 3. L'ajouter dans `drone.launch.py`, et ses paramètres dans `drone.yaml`.
 4. Documenter ses topics dans le tableau ci-dessus.
@@ -170,7 +175,7 @@ Pour un message, utiliser d'abord un type standard (`std_msgs`, `sensor_msgs`, `
 | Brique | Issue | Point d'entrée |
 |---|---|---|
 | Calibration de la caméra basse (distorsion) | #68 | `tools/calibration.py` sur la Pi, réécrit `config/camera/module3_640x480.yaml` |
-| ArUco et pose 3D (caméra basse) | #15 | nouveau nœud dans `droneload_vision`, sur `/camera/image_raw` et `/camera/camera_info` |
+| ArUco : utilisation de la pose dans les missions (passage des fenêtres) | #15 | le nœud `aruco` publie déjà identifiant et pose 3D ; reste à s'en servir dans `droneload_vol`, et à mesurer la taille des vrais marqueurs (`marker_size`) |
 | Compensation de l'inclinaison de la caméra | #69 | positions des détections corrigées avec l'attitude (`/mavros/imu/data`), repère horizontal (tf2) |
 | AI HAT (Hailo) | #27 | backend `hailo` de `vision.py` (paramètre `backend`) |
 | Caméra de profondeur | #28, #34 | `realsense2_camera` sur `/stereo/...`, puis remplacer `DISTANCE_AVANT` de l'épreuve 2 |
@@ -189,11 +194,11 @@ Le code 2026 (une seule boucle Python cadencée par la caméra, pymavlink) a ét
 | `tasks/epreuve1.py` (`TakeOff`, `Land`) | réécrit | `missions/decollage.py`, `missions/atterrissage.py` : nouvel essai en cas de refus, remise à zéro |
 | `tasks/epreuve1.py` (`Epreuve1Task`) | gardé (règle des 80 % sur 2 s) | `missions/epreuve1.py` (décision) + `vision.py` (inférence et dessin) |
 | `tasks/epreuve2.py` | gardé | `missions/epreuve2.py`, qui reçoit maintenant les vraies détections |
-| `video.py` | découpé | `camera.py` (entrée libcamera) + `gstream.py` (sortie vers le PC) |
+| `video.py` | découpé | `camera.py` (entrée libcamera) + `gstream.py` (sortie vers le PC), dans `droneload_hardware` |
 | `hardware.py` | gardé pour le crochet | `servo.py` ; le servo caméra disparaît (caméra fixe vers le sol) |
 | `mqtt_server.py` | gardé (même protocole) | `mqtt_server.py` du paquet `droneload_hardware` ; arm/disarm et batterie via MAVROS |
 | `config.py` | remplacé | `drone.yaml` + arguments de `drone.launch.py` |
-| `vision/aruco.py` | mis de côté | repris dans #15 (pose 3D) |
+| `vision/aruco.py` | gardé et complété | nœud `aruco` : même détection (DICT_4X4_50, centre en pixels), plus la pose 3D par `cv2.solvePnP` (remplace `estimatePoseSingleMarkers` de 2025, obsolète) avec la calibration ; compatible OpenCV 4.6 (Ubuntu 24.04) et ≥ 4.7 |
 
 Bugs de 2026 corrigés au passage :
 - `TakeOff` et `Land` n'étaient jamais réinitialisées, donc une 2e demande ne faisait rien. Les missions sont désormais remises à zéro à chaque changement de mode.

@@ -1,5 +1,6 @@
 RETRY_PERIOD = 1.0     # s entre deux demandes à l'autopilote (mode, armement, décollage)
 TIMEOUT = 60.0         # s pour passer en GUIDED et armer (pré-armements d'ArduPilot, EKF prêt...)
+CLIMB_TIMEOUT = 30.0   # s pour atteindre la hauteur cible une fois armé
 TOLERANCE = 0.05       # m
 
 
@@ -15,6 +16,7 @@ class Decollage:
         # États : GUIDED -> ARMEMENT -> MONTEE -> STATIONNAIRE, ou ECHEC
         self.state = 'GUIDED'
         self.start = None
+        self.climb_start = None
         self.last_request = None
 
     def _retry_due(self, now):
@@ -47,6 +49,7 @@ class Decollage:
             if drone.armed:
                 drone.takeoff(self.altitude)
                 self._set_state('MONTEE')
+                self.climb_start = now
             elif self._retry_due(now):
                 drone.arm()
 
@@ -56,8 +59,15 @@ class Decollage:
                 self.log.warning('[DÉCOLLAGE] désarmé pendant la montée, nouvel essai')
                 self._set_state('GUIDED')
                 self.start = now
-            elif drone.get_current_alt_brute() >= self.altitude - TOLERANCE:
-                self._set_state('STATIONNAIRE')
+            elif now - self.climb_start > CLIMB_TIMEOUT:
+                # Le drone reste en stationnaire (tenu par l'autopilote) : l'opérateur décide (land)
+                self.log.error(f'[DÉCOLLAGE] ÉCHEC : {self.altitude} m non atteints en {CLIMB_TIMEOUT:.0f} s '
+                               f'(hauteur lidar : {drone.get_current_alt_brute()})')
+                self._set_state('ECHEC')
+            else:
+                height = drone.get_current_alt_brute()   # None : hauteur inconnue, on attend
+                if height is not None and height >= self.altitude - TOLERANCE:
+                    self._set_state('STATIONNAIRE')
 
         elif self.state == 'STATIONNAIRE':
             drone.send_velocity_body(0, 0, 0, 0)

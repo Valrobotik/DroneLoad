@@ -39,7 +39,7 @@ Lancer le code du drone (les paquets ROS 2 de `drone/`, voir [architecture.md](a
 ```bash
 docker compose --profile drone up -d          # Linux : -f compose.yml -f compose.linux.yml --profile drone up -d
 docker compose logs -f drone
-docker compose exec companion bash -lc 'python3 sim/scripts/mission_test.py'   # 2 cycles décollage / attente / atterrissage par MQTT
+docker compose exec companion bash -lc 'python3 sim/scripts/mission_test.py'   # 2 cycles décollage / attente / atterrissage par MQTT + pose de l'ArUco 0 (drone au départ : reset_drone.sh)
 docker compose restart drone                  # après une modification du code
 docker compose --profile drone down           # tout arrêter, y compris le drone
 ```
@@ -126,7 +126,7 @@ Par défaut, le code du drone (service `drone`) utilise tout le PC : un code qui
 
 ## Modifier la simu
 
-- **Monde** : `sim/worlds/voliere.sdf`. Les ArUco (DICT_4X4_50) sont des textures de `sim/models/aruco_markers/`, régénérables avec `python sim/tools/generate_aruco.py`.
+- **Monde** : `sim/worlds/voliere.sdf`. Les ArUco (DICT_4X4_50, carré noir de 20 cm dans des boîtes de 24 cm, la texture ayant une marge blanche) sont des textures de `sim/models/aruco_markers/`, régénérables avec `python sim/tools/generate_aruco.py`.
 - **Drone** : `sim/models/droneload_drone/model.sdf`, dérivé de `iris_with_ardupilot` (ardupilot_gazebo) avec en plus les caméras et le lidar du MTF-01. Géométrie, masse et poussée sont encore celles de l'iris (vrai drone : F450, moteurs 2216 920 KV, hélices 1045) : à recaler quand le drone sera pesé.
 - **Paramètres autopilote** : `config/ardupilot/drone.parm` (communs avec le vrai drone) et `sitl.parm` (spécifiques SITL). Les paramètres changés depuis QGC sont perdus au redémarrage du SITL : reportez-les dans les fichiers.
 - **Version d'ArduPilot** : `ARDUPILOT_TAG` dans `sim/.env`, puis `docker compose build sitl`. Elle doit correspondre au firmware de la Pixhawk.
@@ -142,7 +142,7 @@ Sur Mac, les ports publiés sont les mêmes : une seule simu à la fois par mach
 
 ## Dépannage
 
-- **Remettre le drone au départ** : le monde n'est pas réinitialisé entre deux vols. Drone posé et désarmé, `./scripts/reset_drone.sh` (depuis `sim/`) le replace sur l'ArUco 0 et redémarre le SITL (prêt à armer ~30 s plus tard). Pour tout remettre à zéro : `docker compose down && docker compose up -d`.
+- **Remettre le drone au départ** : le monde n'est pas réinitialisé entre deux vols. Drone posé et désarmé, `./scripts/reset_drone.sh` (depuis `sim/`) le replace sur l'ArUco 0 et redémarre le SITL (prêt à armer ~30 s plus tard). Pour tout remettre à zéro : `docker compose down && docker compose up -d`. Ne jamais redémarrer `gz-server` seul : les autres services partagent son réseau (`network_mode: service:gz-server`) et perdent alors tous les topics.
 
 - **`docker compose build` échoue sur le SITL** : vérifier que `ARDUPILOT_TAG` existe (`git ls-remote --tags https://github.com/ArduPilot/ardupilot.git | grep Copter-`).
 - **Le test de fumée reste bloqué à l'armement** : `docker compose logs sitl` et, dans QGC, les messages de pré-armement.

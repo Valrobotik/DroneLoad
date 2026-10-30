@@ -4,6 +4,8 @@ Aucune méthode ne bloque : les services MAVROS sont appelés en asynchrone et l
 (mode, armement, distance lidar) est mis à jour par les callbacks. Les missions appellent ces
 méthodes à chaque tick et lisent le résultat aux ticks suivants.
 """
+import time
+
 from geographic_msgs.msg import GeoPointStamped
 from mavros_msgs.msg import PositionTarget, State
 from mavros_msgs.srv import CommandBool, CommandTOL, MessageInterval, SetMode
@@ -15,6 +17,12 @@ STREAMS = {
     173: 20.0,   # RANGEFINDER (lidar brut) -> /mavros/rangefinder/rangefinder
     1: 1.0,      # SYS_STATUS (batterie) -> /mavros/battery
 }
+# Sans mesure lidar depuis ce délai (s), les flux sont redemandés : un autopilote qui redémarre
+# (SITL relancé, Pixhawk rebranchée) les oublie, parfois sans que MAVROS voie de déconnexion
+STREAM_TIMEOUT = 1.0
+# Âge maximal (s) d'une mesure lidar : au-delà, la hauteur est inconnue (None), jamais une valeur figée.
+# Le lidar arrive à 20 Hz : 0,5 s = une dizaine de mesures manquées.
+ALT_MAX_AGE = 0.5
 
 # Masque de PositionTarget : seules les vitesses et la vitesse de lacet sont prises en compte
 VELOCITY_ONLY = (PositionTarget.IGNORE_PX | PositionTarget.IGNORE_PY | PositionTarget.IGNORE_PZ
@@ -32,6 +40,8 @@ class MavrosDrone:
         self.state = State()
         self.altitude = None          # distance lidar (m), None tant qu'aucune mesure n'est arrivée
         self._streams_requested = False
+        self._range_time = 0.0          # time.monotonic() de la dernière mesure lidar
+        self._streams_time = 0.0        # time.monotonic() de la dernière demande des flux
 
         node.create_subscription(State, '/mavros/state', self._on_state, 10)
         node.create_subscription(Range, '/mavros/rangefinder/rangefinder', self._on_range,
@@ -60,8 +70,14 @@ class MavrosDrone:
         return self.state.mode
 
     def get_current_alt_brute(self):
-        """Distance lidar (m), 0.0 tant qu'aucune mesure n'est arrivée."""
-        return self.altitude if self.altitude is not None else 0.0
+        """Distance lidar (m), ou None si aucune mesure récente (moins de ALT_MAX_AGE).
+
+        None veut dire « hauteur inconnue » : la mission attend ou s'arrête, elle ne devine pas.
+        """
+        if self.altitude is None or time.monotonic() - self._range_time > ALT_MAX_AGE:
+            self.log.warning('Hauteur lidar indisponible (pas de mesure récente)', throttle_duration_sec=1.0)
+            return None
+        return self.altitude
 
     # --- Commandes (non bloquantes) ---
     def set_mode(self, mode):
@@ -100,12 +116,18 @@ class MavrosDrone:
 
     def _on_range(self, msg):
         self.altitude = msg.range
+        self._range_time = time.monotonic()
 
     def _housekeeping(self):
         """Toutes les secondes : demande les flux MAVLink et envoie l'origine EKF tant que nécessaire."""
         if not self.connected:
             return
+        now = time.monotonic()
+        if self._streams_requested and now - max(self._range_time, self._streams_time) > STREAM_TIMEOUT:
+            self.log.warning('Plus de mesure lidar : flux MAVLink redemandés', throttle_duration_sec=10.0)
+            self._streams_requested = False
         if not self._streams_requested:
+            self._streams_time = now   # laisse STREAM_TIMEOUT au flux pour arriver
             self._streams_requested = all([
                 self._call(self.interval_client, MessageInterval.Request(message_id=msg_id, message_rate=rate),
                            f'flux MAVLink {msg_id}')

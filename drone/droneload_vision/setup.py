@@ -12,13 +12,12 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    description='Vision : caméra, détection YOLO et flux vidéo vers le PC',
+    description="Vision : détection YOLO et ArUco avec pose 3D (traitement d'image, sans matériel)",
     license='TODO: License declaration',
     entry_points={
         'console_scripts': [
-            'camera = droneload_vision.camera:main',
             'vision = droneload_vision.vision:main',
-            'gstream = droneload_vision.gstream:main',
+            'aruco = droneload_vision.aruco:main',
         ],
     },
 )

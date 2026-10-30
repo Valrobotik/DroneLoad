@@ -1,9 +1,11 @@
 """Test de mission de bout en bout : commandes MQTT comme le dashboard, contrôle par ROS 2.
 
 Deux cycles : takeoff (1 m au lidar) -> attente stable 5 s -> land (désarmé). Le 2e cycle vérifie
-que les missions repartent du début à chaque demande.
+que les missions repartent du début à chaque demande. Pendant l'attente du 1er cycle, le drone est
+au-dessus de l'ArUco 0 (au sol) : sa pose (nœud aruco) doit donner la hauteur du lidar.
 
-Prérequis : simu lancée avec le code du drone (docker compose --profile drone up -d).
+Prérequis : simu lancée avec le code du drone (docker compose --profile drone up -d), drone au
+départ sur l'ArUco 0 (sim/scripts/reset_drone.sh : il atterrit là où il est et dérive d'un test à l'autre).
 Usage : docker compose exec companion bash -lc 'python3 sim/scripts/mission_test.py'
 Code de sortie 0 si tout est OK, 1 sinon.
 """
@@ -11,6 +13,7 @@ import json
 import sys
 import time
 
+import numpy as np
 import paho.mqtt.client as mqtt
 import rclpy
 from mavros_msgs.msg import State
@@ -18,12 +21,17 @@ from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import Range
 from std_msgs.msg import String
+from vision_msgs.msg import Detection3DArray
 
 BROKER = ('127.0.0.1', 1883)
 TAKEOFF_ALT = 1.0      # = takeoff_altitude de drone.yaml
 ALT_TOLERANCE = 0.2    # m
 HOLD_TIME = 5.0        # s en attente
 CYCLES = 2
+ARUCO_ID = '0'           # ArUco au sol sous le drone au départ (sim/worlds/voliere.sdf)
+ARUCO_Z = 0.012          # m, hauteur du marqueur au-dessus du sol
+ARUCO_TOLERANCE = 0.05   # m, écart toléré entre la distance au marqueur et la hauteur lidar
+ARUCO_MAX_OFFSET = 0.25  # m, décalage horizontal maximal (le marqueur sort du champ au-delà)
 
 
 class MissionTest(Node):
@@ -33,8 +41,11 @@ class MissionTest(Node):
         self.height = None
         self.mission_state = ''
         self.telemetry = None
+        self.aruco = None
         self.create_subscription(State, '/mavros/state', self._on_state, 10)
         self.create_subscription(Range, '/mavros/rangefinder/rangefinder', self._on_range,
+                                 qos_profile_sensor_data)
+        self.create_subscription(Detection3DArray, '/aruco/detections', self._on_aruco,
                                  qos_profile_sensor_data)
         latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(String, '/mission/state', self._on_mission, latched)
@@ -50,6 +61,24 @@ class MissionTest(Node):
 
     def _on_range(self, msg):
         self.height = msg.range
+
+    def _on_aruco(self, msg):
+        for det in msg.detections:
+            if det.results[0].hypothesis.class_id == ARUCO_ID:
+                self.aruco = det.results[0].pose.pose.position
+
+    def aruco_matches_lidar(self):
+        """ArUco 0 vu, à la distance attendue d'après le lidar, à peu près sous le drone."""
+        self.aruco = None
+        self.wait_for(lambda: self.aruco is not None, 3.0)
+        if self.aruco is None or self.height is None:
+            print('    ArUco 0 non vu', flush=True)
+            return False
+        p = self.aruco
+        expected = self.height - ARUCO_Z
+        print(f'    ArUco 0 : x {p.x:+.3f} y {p.y:+.3f} z {p.z:.3f} m '
+              f'(attendu z ≈ {expected:.3f} m d\'après le lidar)', flush=True)
+        return abs(p.z - expected) < ARUCO_TOLERANCE and np.hypot(p.x, p.y) < ARUCO_MAX_OFFSET
 
     def _on_mission(self, msg):
         if msg.data != self.mission_state:
@@ -112,6 +141,8 @@ def main():
             node.wait_for(lambda: False, 3.0)   # le drone dépasse un peu la cible avant de se stabiliser
             node.set_mode('attente')
             step(f'cycle {cycle} : attente stable {HOLD_TIME:.0f} s', node.holds_alt(HOLD_TIME))
+            if cycle == 1:
+                step('ArUco 0 : pose 3D cohérente avec le lidar', node.aruco_matches_lidar())
             node.set_mode('land')
             if not step(f'cycle {cycle} : atterrissage et désarmement',
                         node.wait_for(lambda: not node.state.armed, 60)):

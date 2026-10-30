@@ -12,11 +12,13 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    description='Matériel et liaisons : servo du crochet, serveur MQTT (dashboard, ESP32)',
+    description='Matériel et liaisons : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT (dashboard, ESP32)',
     license='TODO: License declaration',
     entry_points={
         'console_scripts': [
+            'camera = droneload_hardware.camera:main',
             'servo = droneload_hardware.servo:main',
+            'gstream = droneload_hardware.gstream:main',
             'mqtt_server = droneload_hardware.mqtt_server:main',
         ],
     },
