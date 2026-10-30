@@ -936,7 +936,10 @@
         <always_on>1</always_on>
         <camera>
           <camera_info_topic>/camera/camera_info</camera_info_topic>
-          <horizontal_fov>1.152</horizontal_fov>
+          <!-- Champ mesuré par la calibration du vrai drone en 640x480 (config/camera/module3_640x480.yaml) :
+               fx = 938 px, soit 2*atan(320/938) = 37,7°. En 640x480, libcamera ne garde que le centre
+               du capteur de la Module 3 (66° x 41° en pleine résolution). -->
+          <horizontal_fov>0.6575</horizontal_fov>
           <image><width>640</width><height>480</height><format>R8G8B8</format></image>
           <clip><near>0.05</near><far>50</far></clip>
         </camera>

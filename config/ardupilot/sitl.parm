@@ -10,3 +10,4 @@ MOT_PWM_MAX      1900
 SIM_FLOW_ENABLE  1
 FLOW_TYPE        10     # SITL
 RNGFND1_TYPE     100    # SITL
+RNGFND1_GNDCLEAR 0.15   # m : distance lue drone posé dans Gazebo (0,145 m)

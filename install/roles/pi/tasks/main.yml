@@ -6,38 +6,12 @@
     name: "{{ pi.apt }}"
     update_cache: true
 
-# Sur arm64, le torch de PyPI (tiré par ultralytics) embarque CUDA : plusieurs Go inutiles sur la Pi
-- name: PyTorch CPU
-  ansible.builtin.pip:
-    name:
-      - torch==2.15.0
-      - torchvision==0.29.2
-    extra_args: --index-url https://download.pytorch.org/whl/cpu
-    virtualenv: "{{ droneload_venv }}"
-    virtualenv_command: python3 -m venv
-    virtualenv_site_packages: true
-
 - name: Paquets pip de la Pi (install/packages.yml, section pi)
   ansible.builtin.pip:
     name: "{{ pi.pip }}"
     virtualenv: "{{ droneload_venv }}"
     virtualenv_command: python3 -m venv
     virtualenv_site_packages: true
-
-# ultralytics tire opencv-python (pip, sans GStreamer), qui masquerait python3-opencv (apt)
-- name: Retrait d'opencv-python du venv (OpenCV système avec GStreamer)
-  ansible.builtin.pip:
-    name:
-      - opencv-python
-      - opencv-python-headless
-    state: absent
-    virtualenv: "{{ droneload_venv }}"
-
-- name: Vérification de l'OpenCV système dans le venv (GStreamer, NumPy compatible)
-  ansible.builtin.command: >-
-    {{ droneload_venv }}/bin/python -c
-    "import re, cv2; assert re.search(r'GStreamer:\s+YES', cv2.getBuildInformation()), cv2.__file__"
-  changed_when: false
 
 - name: Broker MQTT ouvert au réseau local (dashboard, ESP32)
   ansible.builtin.copy:

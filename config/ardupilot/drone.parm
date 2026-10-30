@@ -13,11 +13,13 @@ FRAME_TYPE       1      # X
 # Le module M8N reste sur le drone mais seul son compas (I2C) est branché : le GPS est désactivé.
 GPS1_TYPE        0      # aucun GPS
 AHRS_EKF_TYPE    3      # EKF3
-# Sources EKF, jeu 1 : flux optique (vitesse horizontale) + baromètre (altitude).
+# Sources EKF, jeu 1 : flux optique (vitesse horizontale) + lidar (hauteur au-dessus du sol).
+# Lidar plutôt que baromètre : en intérieur, le baromètre dérive (souffle des hélices) et l'altitude
+# de décollage ne correspondrait plus à la hauteur mesurée par les missions (lidar).
 # Quand l'UWB sera prêt : EK3_SRC1_POSXY 6 (ExternalNav), et le flux optique passera en jeu 2 (secours).
 EK3_SRC1_POSXY   0      # aucune position absolue
 EK3_SRC1_VELXY   5      # flux optique
-EK3_SRC1_POSZ    1      # baromètre
+EK3_SRC1_POSZ    2      # lidar (rangefinder)
 EK3_SRC1_VELZ    0      # aucune
 EK3_SRC1_YAW     1      # boussole (compas du M8N)
 
@@ -27,6 +29,7 @@ RNGFND1_TYPE     10     # MAVLink
 RNGFND1_ORIENT   25     # vers le bas
 RNGFND1_MIN      0.05   # m
 RNGFND1_MAX      8      # m
+RNGFND1_GNDCLEAR 0.10   # m : distance lue drone posé. TODO : mesurer sur le vrai drone
 
 # --- Sécurités ---
 FS_EKF_ACTION    1      # estimation de position incohérente : atterrissage

@@ -1,0 +1,31 @@
+# Paramètres du code embarqué (remplace l'ancien drone/config.py), un bloc par nœud.
+# Ce qui change entre simu et drone réel (IP du PC, modèle, mock du crochet...) est réglé
+# par drone.launch.py, voir ses arguments.
+
+main_node:
+  ros__parameters:
+    rate: 20.0                    # Hz, cadence des missions
+    takeoff_altitude: 1.0         # m au-dessus du sol (lidar)
+    image_width: 640              # px, pour le centrage en épreuve 2
+    ekf_origin: [45.7838, 4.8722, 170.0]   # origine EKF fictive (sans GPS, requise par GUIDED)
+
+camera:
+  ros__parameters:
+    width: 640
+    height: 480
+    fps: 15
+
+vision:
+  ros__parameters:
+    backend: ultralytics          # hailo : AI HAT, pas encore disponible (#27)
+    confidence: 0.5
+
+gstream:
+  ros__parameters:
+    port: 5000                    # UDP, reçu par ground/launch.py
+    fps: 15
+
+mqtt_server:
+  ros__parameters:
+    broker_ip: 127.0.0.1          # broker mosquitto local (Pi ou service mqtt de la simu)
+    broker_port: 1883

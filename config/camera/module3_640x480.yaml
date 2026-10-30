@@ -1,0 +1,26 @@
+# Calibration de la caméra Module 3 du drone, en 640x480 (pipeline libcamerasrc du nœud camera).
+# Format camera_info de ROS ; publié sur /camera/camera_info par le nœud camera.
+# Régénérer avec tools/calibration.py (sur la Pi), qui réécrit ce fichier.
+#
+# Origine : calibration de juin 2026 (tag archive/v1, head.py), seule la matrice avait été conservée.
+# TODO(#68) : refaire la calibration. Distorsion inconnue (supposée nulle) et erreur de reprojection non notée.
+image_width: 640
+image_height: 480
+camera_name: module3
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [938.0977752, 0.0, 334.47205909, 0.0, 921.31924245, 282.65895721, 0.0, 0.0, 1.0]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [938.0977752, 0.0, 334.47205909, 0.0, 0.0, 921.31924245, 282.65895721, 0.0, 0.0, 0.0, 1.0, 0.0]

@@ -1,10 +1,14 @@
-# Override « limites de la Pi 5 » : le conteneur companion (où tourne le code du drone) est plafonné
-# en CPU et en RAM, pour repérer un code qui tient le temps réel sur le PC mais pas sur la Pi.
+# Override « limites de la Pi 5 » : le code du drone (service drone) et le conteneur companion
+# (benchmark) sont plafonnés en CPU et en RAM, pour repérer un code qui tient le temps réel sur le PC
+# mais pas sur la Pi.
 #   docker compose -f compose.yml -f compose.pi.yml up -d    (Linux : ajouter compose.linux.yml avant)
 # PI_CPUS et PI_MEM sont dans .env. PI_CPUS est un budget de temps CPU, pas une vitesse de cœur :
 # le régler avec scripts/bench_cpu.py (voir docs/simulation.md, « Limites de la Pi »).
+x-pi: &pi
+  cpus: ${PI_CPUS}
+  mem_limit: ${PI_MEM}
+  memswap_limit: ${PI_MEM}   # = mem_limit : pas de swap, la Pi n'en a pas
+
 services:
-  companion:
-    cpus: ${PI_CPUS}
-    mem_limit: ${PI_MEM}
-    memswap_limit: ${PI_MEM}   # = mem_limit : pas de swap, la Pi n'en a pas
+  companion: *pi
+  drone: *pi

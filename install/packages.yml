@@ -10,28 +10,30 @@ commun:
     - "ros-{{ ros_distro }}-mavros"
     - "ros-{{ ros_distro }}-mavros-extras"
     - "ros-{{ ros_distro }}-foxglove-bridge"
+    - "ros-{{ ros_distro }}-vision-msgs"     # détections YOLO (/detections)
+    - "ros-{{ ros_distro }}-cv-bridge"       # images ROS <-> OpenCV
     - ros-dev-tools
     - python3-opencv          # compilé avec GStreamer : ne jamais ajouter opencv-python dans pip
-  pip:
+    - python3-psutil          # télémétrie CPU/RAM
+    - gstreamer1.0-tools
+    - gstreamer1.0-plugins-good   # jpegenc, rtpjpegpay, udpsink : flux vidéo vers le PC
+  pip:                        # torch (version CPU) est installé à part par le rôle common
     - paho-mqtt==2.1.0        # MQTT (dashboard, robot ESP32)
-    - pymavlink==2.4.50       # MAVLink (code actuel, scripts de débogage)
+    - pymavlink==2.4.50       # MAVLink (scripts de débogage)
+    - ultralytics==8.4.192    # YOLO (backend du nœud vision hors AI HAT)
+    - ncnn==1.0.20261020
+    - numpy<2                 # python3-opencv d'Ubuntu est compilé avec NumPy 1.x
 
 # Raspberry Pi seulement
 pi:
   apt:
     - mosquitto               # broker MQTT local (dashboard, robot ESP32)
     - mosquitto-clients       # mosquitto_pub : alertes de install/check.py sur drone/logs
-    - gstreamer1.0-tools
-    - gstreamer1.0-plugins-good   # jpegenc, rtpjpegpay, udpsink : flux vidéo vers le PC
     - gstreamer1.0-libcamera      # libcamerasrc (à valider sur Pi 5 avec la libcamera d'Ubuntu)
     - libcamera-tools
     - python3-lgpio           # servos (gpiozero sur Pi 5)
-    - python3-psutil          # télémétrie CPU/RAM
-  pip:                        # torch (version CPU) est installé à part par le rôle pi
-    - ultralytics==8.4.192
-    - ncnn==1.0.20261020
+  pip:
     - gpiozero==2.0.1.post3
-    - numpy<2                 # python3-opencv d'Ubuntu est compilé avec NumPy 1.x
 
 # Simulation seulement (images Docker, PC Linux avec Gazebo natif)
 sim:

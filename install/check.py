@@ -26,7 +26,7 @@ VENV = Path("/opt/droneload_venv")
 # Installés hors des listes mais par la procédure elle-même (apply.sh, rôle common)
 APT_PROCEDURE = {"ansible", "ansible-core", "python3-apt", "ros2-apt-source"}
 PIP_OUTILS = {"pip", "setuptools", "wheel"}
-PIP_PROCEDURE = {"torch", "torchvision"}   # version CPU, installée à part par le rôle pi
+PIP_PROCEDURE = {"torch", "torchvision"}   # version CPU, installée à part par le rôle common
 
 
 def normalise(nom):

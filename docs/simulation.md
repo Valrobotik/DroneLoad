@@ -35,6 +35,16 @@ Vérifier que tout marche avec le test de fumée (décollage à 1 m mesuré au l
 docker compose exec companion bash -lc 'python3 sim/scripts/smoke_test.py'
 ```
 
+Lancer le code du drone (les paquets ROS 2 de `drone/`, voir [architecture.md](architecture.md)) : le service `drone` le construit puis le lance avec `sim:=true`. Il est dans un profil à part, car il pilote l'autopilote : ne pas le lancer pendant `smoke_test.py`.
+```bash
+docker compose --profile drone up -d          # Linux : -f compose.yml -f compose.linux.yml --profile drone up -d
+docker compose logs -f drone
+docker compose exec companion bash -lc 'python3 sim/scripts/mission_test.py'   # 2 cycles décollage / attente / atterrissage par MQTT
+docker compose restart drone                  # après une modification du code
+docker compose --profile drone down           # tout arrêter, y compris le drone
+```
+Le dashboard se branche comme sur le vrai drone : `.venv/bin/python ground/launch.py --broker localhost`, avec le flux vidéo annoté.
+
 Ouvrir un shell ROS 2 dans la simu (l'environnement ROS 2 est chargé par le shell ; pour une commande isolée, passer par `bash -lc '...'`). Dans les conteneurs, le dossier courant est la racine du repo :
 ```bash
 docker compose exec companion bash
@@ -48,9 +58,10 @@ ros2 topic hz /camera/image_raw
 |---|---|
 | `gz-server` | Gazebo headless, monde `sim/worlds/voliere.sdf` |
 | `sitl` | ArduCopter ; paramètres `config/ardupilot/*.parm`, rechargés à chaque démarrage |
-| `mavros` | MAVLink ↔ ROS 2 (`/mavros/...`) |
+| `mavros` | MAVLink ↔ ROS 2 (`/mavros/...`), avec le même `mavros.launch.py` que sur le drone |
 | `bridge` | capteurs Gazebo → ROS 2 (`sim/bridge.yaml`) |
-| `companion` | conteneur de développement (le futur code ROS 2 tourne ici) |
+| `companion` | conteneur de développement (tests, `ros2 topic ...`) |
+| `drone` | profil `drone` : code du drone (`drone.launch.py sim:=true`), relancé après `restart_script` |
 | `mqtt` | broker MQTT, même rôle que le mosquitto de la Pi |
 | `foxglove` | profil `foxglove` : `docker compose --profile foxglove up -d` |
 | `gz-gui` | profil `gui` : `docker compose --profile gui up -d gz-gui` |
@@ -92,15 +103,15 @@ Mesuré sur un Mac Apple Silicon (rendu logiciel) : temps réel ≈ 0,87 (0,65 �
 
 ## Limites de la Pi
 
-Par défaut, `companion` utilise tout le PC : un code qui tient le temps réel en simu peut décrocher sur la Pi 5. Trois façons de lancer, de la plus rapide à la plus fidèle :
+Par défaut, le code du drone (service `drone`) utilise tout le PC : un code qui tient le temps réel en simu peut décrocher sur la Pi 5. Trois façons de lancer, de la plus rapide à la plus fidèle :
 
 | Mode | Lancement | Fidélité |
 |---|---|---|
 | Sans limites | `docker compose up -d` | aucune, pour développer |
-| Limites Pi simulées | `docker compose -f compose.yml -f compose.pi.yml up -d` (Linux : `compose.linux.yml` avant `compose.pi.yml`) | approchée : CPU et RAM |
+| Limites Pi simulées | `docker compose -f compose.yml -f compose.pi.yml --profile drone up -d` (Linux : `compose.linux.yml` avant `compose.pi.yml`) | approchée : CPU et RAM |
 | Code sur la vraie Pi | simu sur un PC Linux, code sur la Pi (voir plus bas) | complète |
 
-**Ce que `compose.pi.yml` reproduit** : la RAM (`PI_MEM`, sans swap) et un budget CPU total (`PI_CPUS`, dans `sim/.env`). Seul `companion` est limité : Gazebo, le SITL et le bridge représentent le monde extérieur. MAVROS, qui tournera aussi sur la Pi, n'est pas compté (charge faible).
+**Ce que `compose.pi.yml` reproduit** : la RAM (`PI_MEM`, sans swap) et un budget CPU total (`PI_CPUS`, dans `sim/.env`). Seuls `drone` (le code du drone) et `companion` (où tourne le benchmark) sont limités, chacun séparément : Gazebo, le SITL et le bridge représentent le monde extérieur. MAVROS, qui tournera aussi sur la Pi, n'est pas compté (charge faible).
 
 **Ce qu'il ne reproduit pas** : la vitesse d'un cœur (un cœur de PC ou de Mac va plus vite qu'un Cortex-A76 ; une boucle sur un seul thread reste donc plus rapide qu'en vrai), l'AI HAT Hailo (pas d'émulateur), la baisse de fréquence quand la Pi chauffe, la carte SD, l'UART et l'USB. Sur Mac Apple Silicon, le conteneur est en arm64 comme la Pi ; sur PC x86, émuler l'arm64 fausserait les temps.
 
@@ -111,7 +122,7 @@ Par défaut, `companion` utilise tout le PC : un code qui tient le temps réel e
 
 `docker stats` affiche la consommation de chaque conteneur par rapport à sa limite.
 
-**Code sur la vraie Pi (Pi dans la boucle)** : pas encore outillé, à mettre en place avec la refonte ROS 2 sur la Pi. Principe : la simu tourne sur un PC Linux (réseau de l'hôte, `compose.linux.yml`) sans lancer `companion` ni `mavros`. Sur la Pi, sur le même réseau local et avec le même `ROS_DOMAIN_ID`, le code du drone tourne avec MAVROS connecté au SITL du PC (`fcu_url:=udp://:14550@`, avec le `--serial1` du SITL pointé vers l'IP de la Pi). Les images Gazebo arrivent par DDS sur le réseau, ce qui ajoute de la latence par rapport à la caméra réelle.
+**Code sur la vraie Pi (Pi dans la boucle)** : pas encore testé. Principe : la simu tourne sur un PC Linux (réseau de l'hôte, `compose.linux.yml`) sans lancer `companion`, `drone` ni `mavros`. Sur la Pi, sur le même réseau local et avec le même `ROS_DOMAIN_ID`, le code du drone tourne avec MAVROS connecté au SITL du PC : `ros2 launch droneload_bringup drone.launch.py fcu_url:=udp://:14550@`, avec le `--serial1` du SITL pointé vers l'IP de la Pi. Les images Gazebo arrivent par DDS sur le réseau, ce qui ajoute de la latence par rapport à la caméra réelle.
 
 ## Modifier la simu
 

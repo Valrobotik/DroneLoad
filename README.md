@@ -5,33 +5,30 @@ Code embarqué du drone de l'équipe Valrobotik pour le concours **DroneLoad** (
 ## Matériel
 
 - Châssis F450, Pixhawk 6C mini sous ArduPilot (Copter), sans GPS.
-- Raspberry Pi 5 sous Ubuntu, avec une caméra Pi (libcamera) montée sur un servo.
-- MTF-01 (flux optique + lidar), lu via MAVLink comme rangefinder.
-- Servos : GPIO 17 pour la caméra, GPIO 13 pour le crochet.
+- Raspberry Pi 5 sous Ubuntu 24.04 et ROS 2 Jazzy, avec une caméra Pi Module 3 (libcamera) fixe vers le sol.
+- MTF-01 (flux optique + lidar), branché sur la Pixhawk, lu par ROS via MAVROS comme rangefinder.
+- Servo du crochet sur le GPIO 13.
 
 ## Arborescence
 
 ```
-drone/               code embarqué (Raspberry Pi)
-  main.py            boucle principale cadencée par la caméra
-  config.py          IP, ports, MAVLink, caméra, chemin du modèle
-  mavlink.py         DroneController (pymavlink) + DummyDroneController
-  hardware.py        servos (gpiozero/lgpio)
-  video.py           capture libcamera + renvoi RTP/JPEG vers le PC
-  mqtt_server.py     commandes et télémétrie MQTT
-  tasks/             épreuves (machines à états, non bloquantes)
-  vision/            ArUco (pas encore branché)
-tools/               scripts autonomes (calibration caméra)
+drone/               code embarqué (Raspberry Pi) : workspace ROS 2, voir docs/architecture.md
+  droneload_bringup/ lancement (drone.launch.py) et paramètres (drone.yaml)
+  droneload_vol/     nœud principal, interface MAVROS, missions (décollage, atterrissage, épreuves)
+  droneload_vision/  caméra, détection YOLO, flux vidéo vers le PC
+  droneload_hardware/ servo du crochet, serveur MQTT (dashboard, ESP32)
+tools/               scripts autonomes (calibration caméra -> config/camera/)
 ground/              PC de pilotage : dashboard MQTT + lanceur (macOS, Linux, Windows)
   requirements.txt
 sim/                 simulation (Docker Compose) : monde Gazebo, modèle du drone, bridge, test de fumée
   docker/            Dockerfiles
 config/              configuration des équipements
   ardupilot/         paramètres ArduPilot (communs réel/SITL + spécifiques SITL)
+  camera/            calibration de la caméra (générée par tools/calibration.py)
                      (à venir : elrs/, radio/)
 install/             installation Ansible des ordinateurs (Pi, images Docker, PC Linux) : voir install/README.md
 models/              modèle YOLO entraîné (best.pt + export NCNN)
-docs/                documentation (simulation)
+docs/                documentation (architecture ROS 2, simulation)
 .github/             règles de contribution : contrôle des PR, hook et modèle de commit
 ```
 
@@ -83,13 +80,14 @@ Vérification : `gst-inspect-1.0 rtpjpegdepay` doit décrire l'élément.
 
 ## Lancement
 
-Sur le Pi, depuis la racine du repo :
+Sur la Pi, depuis la racine du repo (un broker MQTT tourne en local, installé par `install/`) :
 ```bash
-python -m drone                 # vol réel : MAVLink sur /dev/ttyAMA0 @ 921600
-python -m drone --sim           # SITL : udp:127.0.0.1:14550
-python -m drone --no-pixhawk    # vision seule, aucune commande MAVLink
-python -m drone --pc-ip 192.168.2.9   # change la destination du flux vidéo
+cd drone && colcon build --symlink-install && cd ..     # après chaque modification de setup.py, du launch ou de drone.yaml
+ros2 launch droneload_bringup drone.launch.py                       # vol réel : MAVROS sur /dev/ttyAMA0 @ 921600
+ros2 launch droneload_bringup drone.launch.py vision_only:=true     # vision seule, sans Pixhawk
+ros2 launch droneload_bringup drone.launch.py pc_ip:=192.168.2.9    # change la destination du flux vidéo
 ```
+Nœuds, topics et arguments : [docs/architecture.md](docs/architecture.md).
 
 Sur le PC, depuis la racine du repo :
 ```bash
@@ -97,7 +95,7 @@ Sur le PC, depuis la racine du repo :
 ```
 Le script ouvre la fenêtre vidéo GStreamer (UDP 5000) et lance le dashboard dans le terminal. Sur macOS, `ground/dashboard.command` fait la même chose en double-clic.
 
-Les valeurs par défaut (IP, ports, résolution, modèle) sont dans `drone/config.py`.
+Les réglages du drone (hauteur de décollage, résolution, ports, broker) sont dans `drone/droneload_bringup/config/drone.yaml`.
 
 ## Simulation
 
@@ -105,7 +103,9 @@ ArduPilot SITL + Gazebo + ROS 2 dans Docker, identique sur Mac et Linux. Voir [d
 ```bash
 cd sim
 docker compose up -d
-docker compose exec companion bash -lc 'python3 sim/scripts/smoke_test.py'
+docker compose exec companion bash -lc 'python3 sim/scripts/smoke_test.py'    # autopilote seul
+docker compose --profile drone up -d                                          # + code du drone
+docker compose exec companion bash -lc 'python3 sim/scripts/mission_test.py'  # mission par MQTT
 ```
 
 ## Protocole MQTT

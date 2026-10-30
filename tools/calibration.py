@@ -3,17 +3,22 @@ import cv2
 import numpy as np
 import glob
 import os
+from pathlib import Path
 from typing import Optional
+
+# Fichier lu par le nœud camera du drone (format camera_info de ROS)
+CALIBRATION_DIR = Path(__file__).resolve().parent.parent / "config" / "camera"
 
 
 def calibrate_camera(
         images_folder: str,
         chessboard_size: tuple = (9, 6),
         square_size_mm: float = 27.0
-) -> Optional[np.ndarray]:
+) -> Optional[tuple]:
     """
     Calibre la caméra à partir de photos d'un damier.
-    Retourne la cameraMatrix (3x3) ou None si calibration impossible.
+    Retourne (cameraMatrix 3x3, distCoeffs, taille de l'image, erreur de reprojection),
+    ou None si calibration impossible.
     """
     objp = np.zeros((chessboard_size[0] * chessboard_size[1], 3), np.float32)
     objp[:, :2] = np.mgrid[
@@ -70,8 +75,39 @@ def calibrate_camera(
 
     print("\ncameraMatrix :")
     print(camera_matrix)
+    print("distCoeffs :")
+    print(dist_coeffs.ravel())
 
-    return camera_matrix
+    return camera_matrix, dist_coeffs.ravel(), img_shape, ret
+
+
+def save_camera_info(path: Path, camera_matrix: np.ndarray, dist_coeffs: np.ndarray,
+                     image_size: tuple, error: float) -> None:
+    """
+    Enregistre la calibration au format camera_info de ROS (lu par le nœud camera).
+    """
+    width, height = image_size
+    k = camera_matrix.ravel().tolist()
+    p = [k[0], k[1], k[2], 0.0, k[3], k[4], k[5], 0.0, k[6], k[7], k[8], 0.0]
+
+    def matrix(rows, cols, data):
+        return f"  rows: {rows}\n  cols: {cols}\n  data: {[float(x) for x in data]}\n"
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"# Calibration de la caméra Module 3 du drone, en {width}x{height} (pipeline libcamerasrc du nœud camera).\n"
+        f"# Générée par tools/calibration.py le {time.strftime('%Y-%m-%d')}, "
+        f"erreur de reprojection {error:.3f} px.\n"
+        f"image_width: {width}\n"
+        f"image_height: {height}\n"
+        f"camera_name: module3\n"
+        f"camera_matrix:\n{matrix(3, 3, k)}"
+        f"distortion_model: plumb_bob\n"
+        f"distortion_coefficients:\n{matrix(1, len(dist_coeffs), dist_coeffs)}"
+        f"rectification_matrix:\n{matrix(3, 3, np.eye(3).ravel())}"
+        f"projection_matrix:\n{matrix(3, 4, p)}"
+    )
+    print(f"Calibration enregistrée : {path}")
 
 
 def take_photos(cap: cv2.VideoCapture,
@@ -133,12 +169,14 @@ if __name__ == "__main__":
     time.sleep(5)
 
     # ── Calibration ────────────────────────────────────────────────────────
-    camera_matrix = calibrate_camera(
+    result = calibrate_camera(
         images_folder="photos",
         chessboard_size=(9, 6),
         square_size_mm=25.0
     )
 
-    if camera_matrix is not None:
+    if result is not None:
+        camera_matrix, dist_coeffs, image_size, error = result
         print("\nCalibration OK !")
-        print(camera_matrix)
+        save_camera_info(CALIBRATION_DIR / f"module3_{width}x{height}.yaml",
+                         camera_matrix, dist_coeffs, image_size, error)
