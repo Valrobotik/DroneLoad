@@ -52,6 +52,17 @@ def cpu_temperature():
     return None
 
 
+def undervoltage_file():
+    """Alarme de sous-tension de la Pi 5 (hwmon rpi_volt), None ailleurs (simu, PC)."""
+    for hwmon in Path('/sys/class/hwmon').glob('hwmon*'):
+        try:
+            if (hwmon / 'name').read_text().strip() == 'rpi_volt' and (hwmon / 'in0_lcrit_alarm').exists():
+                return hwmon / 'in0_lcrit_alarm'
+        except OSError:
+            continue
+    return None
+
+
 def check_install():
     """Résultat de install/check.py en quelques mots (Pi seulement : ailleurs, il signalerait l'environnement)."""
     if not Path('/boot/firmware/config.txt').exists():
@@ -112,6 +123,10 @@ class MqttServer(Node):
         self.client.loop_start()
 
         self.telemetry = {}           # dernière télémétrie envoyée (reprise par le bilan de démarrage)
+        # Sous-tension (alimentation trop faible, ex. servo sur le 5 V de la Pi) : peut faire perdre la Pixhawk
+        self.undervoltage_path = undervoltage_file()
+        self.undervoltage = False
+        self.undervoltage_count = 0   # passages en sous-tension depuis le lancement
         self.create_timer(1.0, self._telemetry)
         # Temps réel, pas un timer ROS : en simu, l'horloge simulée saute au 1er /clock et le déclencherait aussitôt
         self.bilan_at = time.monotonic() + BILAN_DELAY
@@ -234,7 +249,8 @@ class MqttServer(Node):
         fcu = (f"FCU OK {self.fcu.mode or '?'}" if self.fcu.connected else 'FCU DÉCONNECTÉE')
         hauteur = f"lidar {t['height']:.2f} m" if t.get('height') is not None else 'LIDAR MUET'
         batterie = f"{t['batt_v']} V" if t.get('batt_v', -1) != -1 else 'BATTERIE ?'
-        self.log_to_pc(f'Démarrage : {fcu}, {hauteur}, {batterie}')
+        alim = f', {self.undervoltage_count} SOUS-TENSION(S)' if self.undervoltage_count else ''
+        self.log_to_pc(f'Démarrage : {fcu}, {hauteur}, {batterie}{alim}')
         camera = f"caméra {t.get('cam_fps', 0)}/s" if t.get('cam_fps') else 'CAMÉRA MUETTE'
         vision = f"IA {t.get('fps', 0)}/s" if t.get('fps') else 'IA MUETTE'
         crochet = 'crochet OK' if t.get('hook_ready') else 'CROCHET HS'
@@ -286,6 +302,20 @@ class MqttServer(Node):
             return time.monotonic() - self.flight_start
         return self.flight_time
 
+    def read_undervoltage(self):
+        """Alarme de sous-tension (bool), None sans capteur ; journalise chaque passage en sous-tension."""
+        if self.undervoltage_path is None:
+            return None
+        try:
+            active = self.undervoltage_path.read_text().strip() == '1'
+        except OSError:
+            return None
+        if active and not self.undervoltage:
+            self.undervoltage_count += 1
+            self.log_to_pc('SOUS-TENSION de la Pi : alimentation trop faible (servo sur le 5 V de la Pi ?)')
+        self.undervoltage = active
+        return active
+
     def _telemetry(self):
         now = time.time()
         if self.esp_connected and now - self.last_esp_ping > ESP_TIMEOUT:
@@ -301,6 +331,7 @@ class MqttServer(Node):
             'cpu_percent': psutil.cpu_percent(),
             'cpu_temp': cpu_temperature(),
             'ram_percent': psutil.virtual_memory().percent,
+            'undervoltage': self.read_undervoltage(),   # null hors Pi 5
             'flight_time_sec': int(self.flight_seconds()),   # vol en cours, sinon dernier vol
             'mode': self.current_mode,          # dernier mode demandé
             'mission': self.mission_state,      # état réel de main_node, ex. takeoff:MONTEE

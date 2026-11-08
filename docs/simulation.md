@@ -72,7 +72,7 @@ Tous les conteneurs partagent le même réseau et se parlent sur `127.0.0.1`. Le
 
 | Topic | Type | Source en simu | Source sur le drone |
 |---|---|---|---|
-| `/camera/image_raw`, `/camera/camera_info` | Image, CameraInfo | Gazebo (640×480, 15 Hz), vers le sol | caméra Module 3 vers le sol (`libcamerasrc`) |
+| `/camera/image_raw`, `/camera/camera_info` | Image, CameraInfo | Gazebo (640×480, 15 Hz), vers le sol | caméra Module 3 vers le sol (`libcamerasrc` ; à valider : la libcamera d'Ubuntu 24.04 ne gère pas le Pi 5, essai de `camera_ros` en cours) |
 | `/stereo/color/image_raw`, `/stereo/depth/image_raw`, `/stereo/camera_info` | Image, CameraInfo | Gazebo `rgbd_camera` (type RealSense D435), vers l'avant | caméra de profondeur USB vers l'avant |
 | `/mavros/...` | état, pose, commandes | SITL via MAVROS | Pixhawk via MAVROS (`/dev/ttyAMA0:921600`) |
 | `/clock` | Clock | Gazebo | — |
