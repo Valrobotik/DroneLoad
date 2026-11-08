@@ -4,10 +4,13 @@ Code embarqué du drone de l'équipe Valrobotik pour le concours **DroneLoad** (
 
 ## Matériel
 
-- Châssis F450, Pixhawk 6C mini sous ArduPilot (Copter), sans GPS.
+- Châssis Tarot FY450, moteurs Holybro 2216 920 KV, hélices 1045, LiPo 3S 5000 mAh, Pixhawk 6C mini sous ArduPilot (Copter), sans GPS (seul le compas du M8N sert).
 - Raspberry Pi 5 sous Ubuntu 24.04 et ROS 2 Jazzy, avec une caméra Pi Module 3 (libcamera) fixe vers le sol.
-- MTF-01 (flux optique + lidar), branché sur la Pixhawk, lu par ROS via MAVROS comme rangefinder.
-- Servo du crochet sur le GPIO 13.
+- MicoAir MTF-01P (flux optique + lidar), branché sur la Pixhawk, lu par ROS via MAVROS comme rangefinder.
+- Servo SG90 du crochet sur le GPIO 13.
+- Radio FrSky Taranis X9D Plus + RadioMaster Ranger Micro, récepteur ELRS RadioMaster Nano RP3.
+
+Références complètes, positions des capteurs et masse estimée : section « Matériel » de `docs/architecture.md`.
 
 ## Arborescence
 

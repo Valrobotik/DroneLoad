@@ -24,7 +24,7 @@ STREAM_TIMEOUT = 1.0
 # Âge maximal (s) d'une mesure lidar : au-delà, la hauteur est inconnue (None), jamais une valeur figée.
 # Le lidar arrive à 20 Hz : 0,5 s = une dizaine de mesures manquées.
 ALT_MAX_AGE = 0.5
-# Plage valide du lidar (m), alignée sur RNGFND1_MIN / RNGFND1_MAX de config/ardupilot/drone.parm :
+# Plage valide du lidar (m), alignée sur RNGFND1_MIN / RNGFND1_MAX de config/ardupilot/pixhawk.param :
 # hors plage (inf, nan, 0 quand le MTF-01 perd le sol), la hauteur est inconnue
 LIDAR_MIN = 0.05
 LIDAR_MAX = 8.0

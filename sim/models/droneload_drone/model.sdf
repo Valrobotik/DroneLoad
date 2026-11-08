@@ -2,11 +2,13 @@
 <!--
   Drone DroneLoad simulé, dérivé de iris_with_ardupilot (ardupilot_gazebo, commit 80dc966) :
   châssis iris, aérodynamique des hélices et plugin ArduPilot (liaison SITL) en sont repris tels quels.
-  Vrai drone : châssis F450 en X, moteurs 2216 920 KV, hélices 1045. TODO : géométrie, masse,
-  inerties et poussée sont encore celles de l'iris, à recaler quand le drone sera pesé.
+  Vrai drone : Tarot FY450 en X, moteurs 2216 920 KV, hélices 1045, masse estimée 1,5 kg (docs/architecture.md,
+  « Matériel »). Géométrie, masse (1,6 kg), inerties et poussée restent celles de l'iris, assez proche :
+  à recaler seulement si la pesée s'en écarte nettement.
   Ajouts DroneLoad (positions provisoires) :
   - lidar du MTF-01 vers le bas, envoyé au SITL par le plugin ArduPilot (le flux optique est simulé par le SITL) ;
-  - caméra Module 3 (66° H, 640x480 @ 15 Hz), fixe vers le sol ;
+  - caméra Module 3 (640x480 @ 15 Hz, 37,7° H : en 640x480 libcamera ne lit que le centre du capteur,
+    66° H en image complète ; fx = 938 comme la calibration), fixe vers le sol ;
   - caméra de profondeur USB type RealSense D435 (87° H, 0,28-10 m), fixe vers l'avant.
 -->
 <sdf version="1.9">
@@ -897,9 +899,10 @@
     </plugin>
 
 
-    <!-- Lidar du MTF-01, vers le bas : transmis directement au SITL (rng_1 -> RNGFND1_TYPE 100), pas à ROS -->
+    <!-- Lidar du MTF-01P, vers le bas : transmis directement au SITL (rng_1 -> RNGFND1_TYPE 100), pas à ROS.
+         25 cm en arrière du centre comme sur le drone (RNGFND1_POS_X / FLOW_POS_X de pixhawk.param) -->
     <link name="lidar_link">
-      <pose>0 0 -0.05 0 1.5708 0</pose>
+      <pose>-0.25 0 -0.05 0 1.5708 0</pose>
       <inertial>
         <mass>0.005</mass>
         <inertia><ixx>1e-6</ixx><iyy>1e-6</iyy><izz>1e-6</izz></inertia>

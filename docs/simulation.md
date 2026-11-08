@@ -127,8 +127,8 @@ Par défaut, le code du drone (service `drone`) utilise tout le PC : un code qui
 ## Modifier la simu
 
 - **Monde** : `sim/worlds/voliere.sdf`. Les ArUco (DICT_4X4_50, carré noir de 20 cm dans des boîtes de 24 cm, la texture ayant une marge blanche) sont des textures de `sim/models/aruco_markers/`, régénérables avec `python sim/tools/generate_aruco.py`.
-- **Drone** : `sim/models/droneload_drone/model.sdf`, dérivé de `iris_with_ardupilot` (ardupilot_gazebo) avec en plus les caméras et le lidar du MTF-01. Géométrie, masse et poussée sont encore celles de l'iris (vrai drone : F450, moteurs 2216 920 KV, hélices 1045) : à recaler quand le drone sera pesé.
-- **Paramètres autopilote** : `config/ardupilot/drone.parm` (communs avec le vrai drone) et `sitl.parm` (spécifiques SITL). Les paramètres changés depuis QGC sont perdus au redémarrage du SITL : reportez-les dans les fichiers.
+- **Drone** : `sim/models/droneload_drone/model.sdf`, dérivé de `iris_with_ardupilot` (ardupilot_gazebo) avec en plus les caméras et le lidar du MTF-01. Géométrie, masse et poussée restent celles de l'iris (1,6 kg, hélices de 10"), proches du vrai drone (Tarot FY450, moteurs 2216 920 KV, hélices 1045, ~1,5 kg estimé) : à recaler seulement si la pesée s'en écarte nettement. Le lidar est placé comme sur le drone, 25 cm en arrière du centre.
+- **Paramètres autopilote** : `config/ardupilot/pixhawk.param`, le fichier unique de la vraie Pixhawk (export Mission Planner, voir `docs/architecture.md`), puis `sitl.parm` qui ne remplace que le matériel simulé (moteurs, capteurs, calibrations). Les paramètres changés depuis QGC sont perdus au redémarrage du SITL : reportez-les dans `pixhawk.param`.
 - **Version d'ArduPilot** : `ARDUPILOT_TAG` dans `sim/.env`, puis `docker compose build sitl`. Elle doit correspondre au firmware de la Pixhawk.
 - **Dépendances** : tout s'installe via `install/` (Ansible), utilisé par les Dockerfiles de `sim/docker/` et par la Pi. Ajouter le paquet (apt ou pip, version figée) dans `install/packages.yml`, puis `docker compose build` (voir `install/README.md`).
 

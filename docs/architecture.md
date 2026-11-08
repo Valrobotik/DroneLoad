@@ -97,7 +97,7 @@ Commandes de l'autopilote, toutes envoyées par `MavrosDrone` sans attendre la r
 | origine EKF (sans GPS, requise par GUIDED) | topic `/mavros/global_position/set_gp_origin` |
 | flux lidar (RANGEFINDER) et batterie (SYS_STATUS), pas envoyés par défaut par ArduPilot ; redemandés si le lidar se tait 1 s (autopilote redémarré) | service `/mavros/set_message_interval` |
 
-L'altitude utilisée par les missions est la distance lidar brute du MTF-01 (`/mavros/rangefinder/rangefinder`). `get_current_alt_brute()` renvoie `None` si la dernière mesure a plus de 0,5 s ou sort de la plage du lidar (non finie, hors de 0,05 à 8 m, les bornes `RNGFND1_MIN/MAX` de `drone.parm`) : une mission ne doit jamais deviner une hauteur, elle attend ou s'arrête. (La Pixhawk, elle, lit le lidar directement et tient sa hauteur même si la Pi ne reçoit plus le flux.)
+L'altitude utilisée par les missions est la distance lidar brute du MTF-01 (`/mavros/rangefinder/rangefinder`). `get_current_alt_brute()` renvoie `None` si la dernière mesure a plus de 0,5 s ou sort de la plage du lidar (non finie, hors de 0,05 à 8 m, les bornes `RNGFND1_MIN/MAX` de `config/ardupilot/pixhawk.param`) : une mission ne doit jamais deviner une hauteur, elle attend ou s'arrête. (La Pixhawk, elle, lit le lidar directement et tient sa hauteur même si la Pi ne reçoit plus le flux.)
 
 ## Nœud principal et missions
 
@@ -180,6 +180,76 @@ Ce que lance chaque mode :
 4. Documenter ses topics dans le tableau ci-dessus.
 
 Pour un message, utiliser d'abord un type standard (`std_msgs`, `sensor_msgs`, `geometry_msgs`, `vision_msgs`). Ne créer un paquet de messages que si aucun type standard ne convient.
+
+## Matériel
+
+| Rôle | Référence | Remarque |
+|---|---|---|
+| Châssis | Tarot FY450 (quadri X) | pieds sous les moteurs, protections d'hélices et support LiPo / Pi / servo imprimés en 3D |
+| Moteurs, hélices | Holybro 2216 920 KV, Holybro 1045 autobloquantes | |
+| ESC | LANRC 45A BLHeli_S (firmware Bluejay, à confirmer) | DShot bidirectionnel : demande Bluejay, pas le BLHeli_S d'origine |
+| Batterie | HRB LiPo 3S 5000 mAh 50C, XT60 | |
+| Module d'alimentation | Holybro PM03D (I2C) | alimente la Pixhawk, mesure tension et courant |
+| BEC de la Pi | Matek BEC 12S Pro 9-55 V → 5 V 5 A | |
+| Contrôleur de vol | Holybro Pixhawk 6C mini | |
+| Compas | module M8N livré avec la Pixhawk (LED et bouton de sécurité intégrés) | GPS non utilisé, seul le compas l'est |
+| Flux optique + lidar | MicoAir MTF-01P | sur la Pixhawk (TELEM2) |
+| Ordinateur de bord | Raspberry Pi 5 (8 ou 16 Go) | |
+| Caméra | Raspberry Pi Camera Module 3 standard (75° en diagonale) | fixe, vers le sol ; ~38° × 29° en 640x480 (voir plus bas) |
+| Crochet | servo SG90 5 V | GPIO 13 de la Pi |
+| Radio | FrSky Taranis X9D Plus 2019 (EdgeTX) + module RadioMaster Ranger Micro, récepteur RadioMaster Nano RP3 (ELRS) | récepteur en MAVLink sur TELEM1 |
+| Capteur de distance | Pimoroni VL53L5CX | désactivé, non fonctionnel |
+
+Ports de la Pixhawk : voir plus bas, « Ports ».
+
+**Positions** (mesurées, drone posé ; repère ArduPilot : X avant, Y droite, Z bas, origine au centre de gravité, estimé à ~18 cm du sol et au centre du châssis, à confirmer) :
+
+| Élément | Mesure | Paramètres |
+|---|---|---|
+| Plaque supérieure du châssis | 20 cm du sol | |
+| LiPo (milieu) | 14 cm du sol | |
+| MTF-01P (entre les deux optiques) | 25 cm en arrière du centre, bas des optiques à 16,5 cm du sol | `FLOW_POS` et `RNGFND1_POS` = (-0.25, 0, 0.015), `RNGFND1_GNDCLR 0.165` |
+| M8N (milieu) | 6 cm en arrière du centre, 31 cm du sol | aucun : ArduPilot n'a pas de position pour un compas et le GPS n'est pas utilisé (`GPS1_POS_*` le jour où il le sera) |
+| Pixhawk (IMU) | supposée au centre | `INS_POS*` à 0 |
+
+**Masse** estimée à ≈ 1,5 kg (1,4 à 1,65 ; à remplacer par une pesée) : châssis ~280 g, moteurs ~240 g, hélices ~50 g, ESC ~50 g, LiPo ~390 g, Pixhawk + M8N ~90 g, PM03D + BEC ~40 g, Pi 5 ~70 g, caméra, capteurs, récepteur, servo ~30 g, pièces imprimées ~200 g, câblage ~40 g. Les moteurs poussent ~0,9 kg chacun en 3S avec des 1045, soit ~3,6 kg au total : rapport poussée/poids ~2,4, stationnaire vers 45 % de gaz (`MOT_THST_HOVER` appris : 0,46), ~17 A en stationnaire, soit ~14 min de vol sur 80 % de la LiPo. L'iris de la simu (1,6 kg, hélices de 10") en est assez proche pour être gardé.
+
+**Champ de la caméra** : en 640x480, libcamera ne lit qu'une zone centrale du capteur (mode recadré 1536x864, puis découpe en 4:3). L'image couvre donc ~38° × 29° (fx ≈ 938 dans `config/camera/module3_640x480.yaml`) au lieu des 66° × 41° de l'image complète : à 1 m de haut, elle montre ~0,68 × 0,52 m de sol. C'est déduit de la calibration, pas encore vérifié sur la Pi (le mode choisi s'affiche dans les logs de libcamera). La caméra Gazebo a le même champ.
+
+## Pixhawk (ArduCopter)
+
+Un seul fichier de paramètres : `config/ardupilot/pixhawk.param` (format Mission Planner `NOM,VALEUR`, calibrations comprises). Il est chargé sur la Pixhawk **et** par le SITL (`copter.parm` → `pixhawk.param` → `sitl.parm`, `sitl.parm` ne remplaçant que le matériel simulé). Pour qu'il reste la référence :
+
+- changer un paramètre dans le repo : modifier `pixhawk.param`, valider en simu, puis le charger sur la Pixhawk (Mission Planner : *Config > Full Parameter List > Load from file*, puis *Write Params*) ;
+- changer un paramètre sur la Pixhawk (calibration, réglage) : réexporter la liste complète par-dessus `pixhawk.param` (*Save to file*), relire le diff, valider en simu.
+
+Firmware : la sauvegarde d'origine (2026-11-08) venait d'un ArduCopter 4.6.x (paramètres apparus en 4.6, mais anciens noms `RNGFND1_MIN_CM`, `SRn_*`, `PSC_POSXY_*`...). Le fichier a été converti aux noms de Copter-4.7.2 (`ARDUPILOT_TAG` de `sim/.env`) par ArduPilot lui-même : paramètres écrits dans un SITL 4.6.3 puis relus par un SITL 4.7.2 sur la même eeprom (unités converties : vitesses en m/s, angles en degrés, `ARMING_CHECK` devenu `ARMING_SKIPCHK`, `SERIALn_OPTIONS` bit 10 devenu `MAVn_OPTIONS` bit 1). La 4.7 ne convertit pas les débits de flux : les `SRn_*` (canal MAVLink n) ont été recopiés à la main dans `MAV(n+1)_*`. **Flasher Copter-4.7.2 sur la Pixhawk** (avec le firmware « bdshot », DShot bidirectionnel), vérifier après le flash que `MAV1_*`/`MAV2_*` ont gardé leurs débits (sinon plus de télémétrie ELRS), charger `pixhawk.param`, puis réexporter par-dessus.
+
+### Ports (Pixhawk 6C mini)
+
+| Port ArduPilot | Connecteur | Protocole | Débit | Équipement |
+|---|---|---|---|---|
+| SERIAL0 | USB | MAVLink2 | | PC (Mission Planner, QGC) |
+| SERIAL1 | TELEM1 | MAVLink2 | 460800 | récepteur ELRS en mode MAVLink (radiocommande + télémétrie, RSSI par RADIO_STATUS : `RSSI_TYPE 5`) |
+| SERIAL2 | TELEM2 | MAVLink1, pas de retransmission (`MAV3_OPTIONS 2`) | 115200 | MTF-01 (flux optique + lidar) |
+| SERIAL3 | GPS1 | GPS | 38400 | M8N : seul son compas (I2C, externe, `COMPASS_ORIENT 6` = Yaw270) est utilisé, `GPS1_TYPE 0` |
+| SERIAL4 | GPS2 (UART8) | MAVLink2 | 921600 | Raspberry Pi (`/dev/ttyAMA0:921600`, `mavros.launch.py`) |
+
+Les paramètres `MAVn_*` (débits de flux, options) sont numérotés par canal MAVLink, dans l'ordre des ports en MAVLink : MAV1 = USB, MAV2 = TELEM1 (ELRS), MAV3 = TELEM2 (MTF-01), MAV4 = GPS2 (Pi). `MAV4_*` sont à 0 : ArduPilot n'envoie à la Pi que le HEARTBEAT et ce qu'elle demande. Le code demande ce dont il a besoin (`STREAMS` de `mavros.py`, service `/mavros/set_message_interval`) ; tout nouveau topic MAVROS (pose locale #15, `/mavros/imu/data` #69...) doit être demandé de la même façon, sinon il reste muet sur le vrai drone. La simu reproduit cela : MAVROS y est sur SERIAL1 (MAV2), dont `sitl.parm` remet les débits à 0.
+
+### Vol sans GPS
+
+Sources EKF3, jeu 1 : flux optique pour la vitesse horizontale (`EK3_SRC1_VELXY 5`), lidar pour la hauteur (`EK3_SRC1_POSZ 2`), compas pour le cap (`EK3_SRC1_YAW 1`), aucune position absolue. Lidar plutôt que baromètre : en intérieur le baromètre dérive (souffle des hélices) et l'altitude de décollage ne correspondrait plus à la hauteur lidar des missions. Jeu 2 : même chose avec le baromètre, choisi par la voie RC9. Quand l'UWB sera prêt : `EK3_SRC1_POSXY 6` (ExternalNav), le flux optique passant en secours. Lidar : `RNGFND1_TYPE 10` (MAVLink), vers le bas, plage 0,05-8 m (bornes reprises par `LIDAR_MIN/MAX` de `mavros.py`), `RNGFND1_GNDCLR` 0,165 m (hauteur des optiques drone posé), positions du flux et du lidar dans `FLOW_POS_*` / `RNGFND1_POS_*` (section Matériel). `ARMING_SKIPCHK` (ex-`ARMING_CHECK`) ne saute que les contrôles GPS : ne jamais désactiver les contrôles d'armement.
+
+### Moteurs, batterie, radio, sécurités
+
+- **Moteurs** : châssis quadri X, moteurs 1-4 sur `SERVO9-12` (sorties FMU), DShot300 (`MOT_PWM_TYPE 5`) bidirectionnel (`SERVO_BLH_BDMASK`), sens des 4 moteurs inversé par `SERVO_BLH_RVMASK`, filtre notch sur le régime des ESC (`INS_HNTCH_MODE 3`).
+- **Batterie** : capteur I2C du module d'alimentation (`BATT_MONITOR 21`), LiPo 3S 5000 mAh (`BATT_CAPACITY`). Seuil bas : 10,5 V ou 1250 mAh restants ; seuil critique : 10,2 V ou 750 mAh restants. Dans les deux cas, le drone atterrit (`BATT_FS_LOW_ACT`/`CRT_ACT` 1). L'armement est refusé sous 10,6 V ou sous 1500 mAh restants (`BATT_ARM_VOLT`/`ARM_MAH`). Il faut donc une LiPo assez chargée et une capacité restante juste (vérifier `BATT_CAPACITY` si on change de batterie).
+- **Modes** (voie 6) : Stabilize, FlowHold (position 4), Guided (position 6). Voies auxiliaires : RC8 arrêt d'urgence des moteurs, RC9 jeu de sources EKF, RC10 calibration du flux optique.
+- **Failsafes** : perte radio → atterrissage (`FS_THR_ENABLE 3`), EKF incohérent → atterrissage (`FS_EKF_ACTION 1`), pas de failsafe GCS (`FS_GCS_ENABLE 0`) ; en GUIDED, sans consigne de la Pi pendant 3 s (`GUID_TIMEOUT`) le drone s'arrête en stationnaire.
+- **Bouton de sécurité** actif au démarrage (`BRD_SAFETY_DEFLT 1`) : l'armement (y compris par MQTT) est refusé tant qu'il n'a pas été pressé.
+- **Montée en GUIDED** : `WP_SPD_UP` 1 m/s (la sauvegarde avait 15 cm/s par erreur), descente `WP_SPD_DN` 1,5 m/s.
+- **Simulation** : `sitl.parm` remplace les sorties moteurs (PWM sur 1-4), les calibrations du compas et des accéléromètres, la batterie, le bouton de sécurité et le MTF-01 ; les réglages de vol (PID, vitesses, failsafes, EKF) sont ceux de la Pixhawk.
 
 ## À venir
 

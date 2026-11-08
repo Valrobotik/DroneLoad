@@ -19,7 +19,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, LogInfo, OpaqueFunction
 from launch.launch_description_sources import AnyLaunchDescriptionSource
 
-FCU_URL = '/dev/ttyAMA0:921600'   # UART de la Pi 5 vers la Pixhawk
+FCU_URL = '/dev/ttyAMA0:921600'   # UART de la Pi 5 vers le port GPS2 (SERIAL4) de la Pixhawk
 ALERTE_PERIODE = 10.0             # s entre deux rappels du problème sur drone/logs
 
 
