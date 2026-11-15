@@ -7,29 +7,30 @@ Le code embarqué est découpé en **nœuds ROS 2** (Jazzy) qui échangent des m
 Tout est dans `drone/`, qui est un workspace colcon avec un paquet par rôle :
 
 ```
-drone/
-├── droneload_bringup/            # lancement et paramètres (sans code)
-│   ├── launch/drone.launch.py    # lance tout
-│   ├── launch/mavros.launch.py   # MAVROS, seule configuration (drone et simu)
-│   └── config/drone.yaml         # paramètres de chaque nœud
-├── droneload_vol/
-│   └── droneload_vol/
-│       ├── main_node.py          # nœud principal : modes, appel des missions
-│       ├── mavros.py             # MavrosDrone : commandes et état de l'autopilote, sans bloquer
-│       └── missions/             # décollage, atterrissage, épreuve 1, épreuve 2
-├── droneload_vision/             # traitement d'image seulement (aucun matériel, testable partout)
-│   └── droneload_vision/
-│       ├── vision.py             # détection YOLO
-│       └── aruco.py              # ArUco : identifiant et pose 3D (calibration de /camera/camera_info)
-└── droneload_hardware/           # entrées/sorties du drone : capteurs, actionneurs, liaisons au sol
-    └── droneload_hardware/
-        ├── camera.py             # caméra Module 3 (Pi seulement)
-        ├── servo.py              # servo du crochet (GPIO 13)
-        ├── gstream.py            # flux vidéo vers le PC
-        └── mqtt_server.py        # dashboard et ESP32 (MQTT)
+drone/                            # workspace colcon (build/, install/, log/ créés ici)
+└── src/                          # code source : un dossier par paquet
+    ├── droneload_bringup/            # lancement et paramètres (sans code)
+    │   ├── launch/drone.launch.py    # lance tout
+    │   ├── launch/mavros.launch.py   # MAVROS, seule configuration (drone et simu)
+    │   └── config/drone.yaml         # paramètres de chaque nœud
+    ├── droneload_vol/
+    │   └── droneload_vol/
+    │       ├── main_node.py          # nœud principal : modes, appel des missions
+    │       ├── mavros.py             # MavrosDrone : commandes et état de l'autopilote, sans bloquer
+    │       └── missions/             # décollage, atterrissage, épreuve 1, épreuve 2
+    ├── droneload_vision/             # traitement d'image seulement (aucun matériel, testable partout)
+    │   └── droneload_vision/
+    │       ├── vision.py             # détection YOLO
+    │       └── aruco.py              # ArUco : identifiant et pose 3D (calibration de /camera/camera_info)
+    └── droneload_hardware/           # entrées/sorties du drone : capteurs, actionneurs, liaisons au sol
+        └── droneload_hardware/
+            ├── camera.py             # caméra Module 3 (Pi seulement)
+            ├── servo.py              # servo du crochet (GPIO 13)
+            ├── gstream.py            # flux vidéo vers le PC
+            └── mqtt_server.py        # dashboard et ESP32 (MQTT)
 ```
 
-Chaque paquet contient aussi `package.xml` (dépendances ROS), `setup.py` (liste des nœuds exécutables) et `setup.cfg`. Le code se trouve dans `<paquet>/<paquet>/`, car ament_python impose ce double niveau.
+Chaque paquet contient aussi `package.xml` (dépendances ROS), `setup.py` (liste des nœuds exécutables) et `setup.cfg`. Les paquets sont dans `drone/src/` (disposition standard d'un workspace colcon) et le code se trouve dans `drone/src/<paquet>/<paquet>/`, car ament_python impose ce double niveau.
 
 ## Nœuds et topics
 
@@ -70,7 +71,7 @@ flowchart LR
 
 | Topic | Type | Publié par | Lu par |
 |---|---|---|---|
-| `/camera/image_raw` | `sensor_msgs/Image` | `camera` (Pi), `bridge` (simu) | `vision`, `aruco` |
+| `/camera/image_raw` | `sensor_msgs/Image` | `camera` (Pi, `libcamerasrc` ; à valider : la libcamera d'Ubuntu 24.04 ne gère pas le Pi 5, essai de `camera_ros` en cours), `bridge` (simu) | `vision`, `aruco` |
 | `/camera/camera_info` | `sensor_msgs/CameraInfo` : calibration (`config/camera/module3_640x480.yaml` sur la Pi, caméra Gazebo de même focale en simu) | `camera` (Pi), `bridge` (simu) | `aruco` |
 | `/detections` | `vision_msgs/Detection2DArray` (`class_id` = nom de la classe) | `vision` | `main_node`, `mqtt_server` (FPS) |
 | `/camera/annotated` | `sensor_msgs/Image` | `vision` | `gstream` |
@@ -122,7 +123,7 @@ Il est inchangé depuis 2026 : `ground/dashboard.py` et l'ESP32 n'ont rien à mo
 | `drone/cmd` | PC → drone | JSON `{"action": ...}` : `set_mode` (`mode`), `set_class` (`class_name`), `set_hook` (`state` : `hook_open` / `hook_close`), `arm`, `disarm` |
 | `drone/system` | PC → drone | `reboot`, `restart_script`, `shutdown`, `reboot_fcu` (redémarre la Pixhawk : `MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN` par `/mavros/cmd/command`) ; refusés si le drone est armé |
 | `drone/logs` | drone → PC | texte : messages de `mqtt_server` et logs des autres nœuds |
-| `drone/telemetry` | drone → PC | JSON chaque seconde : `fps` (images analysées par la vision), `cam_fps` (images de la caméra, comptées sur `/camera/camera_info`), `hook_ready` (crochet utilisable ; `false` aussi si `servo` ne publie plus depuis 2,5 s, `null` si jamais reçu), `cpu_percent`, `cpu_temp` (°C ou `null`), `ram_percent`, `flight_time_sec` (temps armé du vol en cours, sinon du dernier vol ; « Vol terminé » sur `drone/logs` au désarmement), `mode` (dernier mode demandé), `mission` (état réel de `main_node`, ex. `takeoff:MONTEE`), `fcu_connected`, `fcu_mode`, `armed` (MAVROS), `height` (lidar en m, `null` sans mesure depuis 1 s), `batt_v`, `batt_pct`, `esp_connected` |
+| `drone/telemetry` | drone → PC | JSON chaque seconde : `fps` (images analysées par la vision), `cam_fps` (images de la caméra, comptées sur `/camera/camera_info`), `hook_ready` (crochet utilisable ; `false` aussi si `servo` ne publie plus depuis 2,5 s, `null` si jamais reçu), `cpu_percent`, `cpu_temp` (°C ou `null`), `undervoltage` (alarme de sous-tension de la Pi 5, `null` ailleurs ; chaque passage est signalé sur `drone/logs` et compté dans le bilan de démarrage), `ram_percent`, `flight_time_sec` (temps armé du vol en cours, sinon du dernier vol ; « Vol terminé » sur `drone/logs` au désarmement), `mode` (dernier mode demandé), `mission` (état réel de `main_node`, ex. `takeoff:MONTEE`), `fcu_connected`, `fcu_mode`, `armed` (MAVROS), `height` (lidar en m, `null` sans mesure depuis 1 s), `batt_v`, `batt_pct`, `esp_connected` |
 | `robot/ping` | ESP32 → drone | heartbeat (déconnecté après 4 s sans ping) |
 
 **La commande `arm` arme réellement les moteurs.**
@@ -161,7 +162,7 @@ ros2 launch droneload_bringup drone.launch.py sim:=true           # simulation (
 | `fcu_url` | `/dev/ttyAMA0:921600` | liaison MAVROS → Pixhawk (argument de `mavros.launch.py`) ; sur un port série, MAVROS n'est pas lancé si le port est absent, inaccessible ou déjà ouvert par un autre programme (raison répétée toutes les 10 s sur `drone/logs`, corriger puis `restart_script`) |
 | `model` | `models/best_ncnn_model` | modèle YOLO |
 
-Les autres réglages (hauteur de décollage, résolution, broker...) sont dans `drone/droneload_bringup/config/drone.yaml`. La calibration de la caméra est dans `config/camera/module3_640x480.yaml` : la refaire avec `tools/calibration.py` sur la Pi (photos d'un damier), qui réécrit ce fichier. Si la résolution change, il faut une nouvelle calibration (#68).
+Les autres réglages (hauteur de décollage, résolution, broker...) sont dans `drone/src/droneload_bringup/config/drone.yaml`. La calibration de la caméra est dans `config/camera/module3_640x480.yaml` : la refaire avec `tools/calibration.py` sur la Pi (photos d'un damier), qui réécrit ce fichier. Si la résolution change, il faut une nouvelle calibration (#68).
 
 Ce que lance chaque mode :
 
@@ -201,6 +202,18 @@ Pour un message, utiliser d'abord un type standard (`std_msgs`, `sensor_msgs`, `
 | Capteur de distance | Pimoroni VL53L5CX | désactivé, non fonctionnel |
 
 Ports de la Pixhawk : voir plus bas, « Ports ».
+
+**Brochage de la Pi 5** (configuré par le rôle `pi` d'`install/`, rien à faire à la main) :
+
+| Liaison | Broches de la Pi | Côté équipement | Configuration |
+|---|---|---|---|
+| Pixhawk | GPIO 14 = TX (broche 8), GPIO 15 = RX (broche 10), GND (broche 6) | GPS2 (SERIAL4), TX et RX croisés | `/dev/ttyAMA0` à 921600 ; `dtparam=uart0=on` dans `config.txt`, pas de `console=serial0`/`ttyAMA0` dans les `cmdline.txt`, `serial-getty@ttyAMA0` et ModemManager masqués |
+| Servo du crochet | GPIO 13 (broche 33) pour le signal | alimentation par un BEC, **jamais par le 5 V de la Pi** (sous-tension, Pixhawk perdue), masse commune avec la Pi | PWM logiciel lgpio, sans overlay ; groupe `gpio` |
+| Caméra Module 3 (imx708) | connecteur CSI (CAM0 ou CAM1, à confirmer) | | `camera_auto_detect=1` ; libcamera prend la première caméra trouvée |
+| Console de debug | connecteur UART dédié de la Pi 5 (`/dev/ttyAMA10`) | adaptateur USB-série | laissée active |
+| Réseau | eth0 en IP fixe `192.168.2.3/16` (câble direct vers le PC), wifi pour internet | | netplan `60-droneload-eth0.yaml` ; wifi sans économie d'énergie (règle udev) ; noms et mots de passe des wifi saisis au flash, pas dans le repo |
+
+La sous-tension est surveillée : `undervoltage` dans la télémétrie, alerte sur `drone/logs`.
 
 **Positions** (mesurées, drone posé ; repère ArduPilot : X avant, Y droite, Z bas, origine au centre de gravité, estimé à ~18 cm du sol et au centre du châssis, à confirmer) :
 

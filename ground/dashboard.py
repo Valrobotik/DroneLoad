@@ -69,6 +69,8 @@ def update_telemetry_ui():
     crochet = {True: "OK", False: "HS"}.get(t.get("hook_ready"), "?")
     cam = t.get("cam_fps", "?")
     cpu = f"{t.get('cpu_percent', 0)}%" + (f" {t['cpu_temp']:.0f}°C" if t.get("cpu_temp") is not None else "")
+    if t.get("undervoltage"):   # alimentation de la Pi trop faible
+        cpu += " SOUS-TENSION"
 
     line11 = f" MISSION: {mission:<16} | FCU: {fcu:<16} | H: {height:<6} | CROCHET: {crochet}"
     line12 = f" ESP32: {esp_status:<3} | CAM/IA: {cam}/{t.get('fps', 0)} FPS | CPU: {cpu} | RAM: {t.get('ram_percent', 0)}% | Batt: {batt_str}"

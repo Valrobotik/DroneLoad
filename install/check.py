@@ -4,7 +4,8 @@
 Compare l'état réel aux listes du repo :
   - paquets apt installés à la main, paquets pip du venv  -> install/packages.yml
   - pip hors venv, autres venvs (ex. .venv du repo), fichiers dans /usr/local/bin (installations à la main)
-  - sur la Pi, configuration du matériel (Pixhawk, caméra, GPIO), du bouton d'alimentation et des mises à jour
+  - sur la Pi, version d'Ubuntu, configuration du matériel (Pixhawk, caméra, GPIO), du réseau, du bouton
+    d'alimentation et des mises à jour
   - ce qui se lance tout seul hors d'install/ (services, crontabs, rc.local, .bashrc...) : un vieux script
     relancé à chaque démarrage survivrait aux redémarrages et prendrait le port de la Pixhawk
 
@@ -36,6 +37,11 @@ PORT_PIXHAWK = Path("/dev/ttyAMA0")
 REGLES_UDEV = Path("/etc/udev/rules.d/99-droneload.rules")
 GROUPES = {"dialout": "port de la Pixhawk", "video": "caméra", "gpio": "GPIO du crochet"}
 LOGIND = Path("/etc/systemd/logind.conf.d/droneload.conf")
+NETPLAN_ETH0 = Path("/etc/netplan/60-droneload-eth0.yaml")
+# Services masqués par le rôle pi : login sur le port de la Pixhawk, sonde des ports série, firmware
+SERVICES_MASQUES = ["serial-getty@ttyAMA0.service", "ModemManager.service", "rpi-eeprom-update.service"]
+UBUNTU = "24.04"   # version visée par install/ (ROS 2 Jazzy)
+CONSOLE_PIXHAWK = re.compile(r"console=(serial0|ttyAMA0)")
 SERVICES_INSTALL = {"droneload.service", "droneload-check.service", "droneload-check.timer"}   # rôle pi
 # Commande qui lance un programme : python script.py, ros2 launch/run, mavproxy, nohup, tmux/screen détachés
 LANCEMENT = re.compile(r"\bpython[0-9.]*\s+\S+\.py|\bros2\s+(launch|run)\b|\bmavproxy|\bnohup\b|\b(tmux|screen)\b.*\s-d")
@@ -151,8 +157,22 @@ def config_pi():
         ecarts.append("config.txt : dtparam=uart0=on absent (UART de la Pixhawk désactivé)")
     if not re.search(r"^camera_auto_detect=1", config, re.M):
         ecarts.append("config.txt : camera_auto_detect=1 absent (caméra CSI non détectée)")
-    if re.search(r"console=(serial0|ttyAMA0)", (BOOT / "cmdline.txt").read_text()):
-        ecarts.append("cmdline.txt : console Linux sur le port de la Pixhawk")
+    # Ligne de commande réellement utilisée, puis celles des prochains démarrages (avec os_prefix=current/,
+    # le cmdline.txt de la racine n'est pas lu ; flash-kernel recopie current/ dans new/)
+    if CONSOLE_PIXHAWK.search(Path("/proc/cmdline").read_text()):
+        ecarts.append("/proc/cmdline : console Linux sur le port de la Pixhawk")
+    for cmdline in [BOOT / "cmdline.txt", BOOT / "current/cmdline.txt", BOOT / "new/cmdline.txt"]:
+        if cmdline.exists() and CONSOLE_PIXHAWK.search(cmdline.read_text()):
+            ecarts.append(f"{cmdline} : console Linux sur le port de la Pixhawk")
+    for service in SERVICES_MASQUES:
+        etat = subprocess.run(["systemctl", "is-enabled", service], capture_output=True, text=True).stdout.strip()
+        if etat != "masked":
+            ecarts.append(f"{service} non masqué ({etat or 'inconnu'})")
+    if not NETPLAN_ETH0.exists():
+        ecarts.append(f"{NETPLAN_ETH0} absent (pas d'IP fixe sur eth0)")
+    autres_mosquitto = [f for f in glob.glob("/etc/mosquitto/conf.d/*.conf") if not f.endswith("/droneload.conf")]
+    if autres_mosquitto:
+        ecarts.append("configuration mosquitto hors install/ : " + " ".join(sorted(autres_mosquitto)))
     if not PORT_PIXHAWK.exists():
         ecarts.append(f"{PORT_PIXHAWK} absent (redémarrer la Pi après ./install/apply.sh)")
     if not LOGIND.exists():
@@ -170,6 +190,10 @@ def config_pi():
     apt = subprocess.run(["apt-config", "dump"], capture_output=True, text=True).stdout
     if re.search(r'^APT::Periodic::Unattended-Upgrade "[1-9]', apt, re.M):
         ecarts.append("mises à jour automatiques actives (unattended-upgrades)")
+    os_release = Path("/etc/os-release").read_text()
+    version = re.search(r'^VERSION_ID="?([^"\n]*)', os_release, re.M)
+    if not version or version.group(1) != UBUNTU:
+        ecarts.append(f"Ubuntu {version.group(1) if version else '?'} au lieu de {UBUNTU} (ROS 2 Jazzy) : reflasher la carte")
     return ecarts
 
 

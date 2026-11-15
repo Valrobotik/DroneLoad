@@ -32,7 +32,7 @@ from launch_ros.actions import Node
 PC_IP = '192.168.31.181'        # PC de pilotage sur le réseau du drone
 SIM_PC_IP = 'host.docker.internal'
 RESPAWN_DELAY = 2.0             # s avant de relancer un nœud arrêté
-REPO = Path(__file__).resolve().parents[3]   # drone/droneload_bringup/launch/ -> racine du repo
+REPO = Path(__file__).resolve().parents[4]   # drone/src/droneload_bringup/launch/ -> racine du repo
 MODEL = REPO / 'models' / 'best_ncnn_model'
 CALIBRATION = REPO / 'config' / 'camera' / 'module3_640x480.yaml'   # calibration de la caméra (camera_info)
 LOCK = Path('/tmp/droneload-drone.lock')

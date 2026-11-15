@@ -102,7 +102,7 @@ Sur le PC, depuis la racine du repo :
 ```
 Le script ouvre la fenêtre vidéo GStreamer (UDP 5000) et lance le dashboard dans le terminal. Sur macOS, `ground/dashboard.command` fait la même chose en double-clic.
 
-Les réglages du drone (hauteur de décollage, résolution, ports, broker) sont dans `drone/droneload_bringup/config/drone.yaml`.
+Les réglages du drone (hauteur de décollage, résolution, ports, broker) sont dans `drone/src/droneload_bringup/config/drone.yaml`.
 
 ## Simulation
 

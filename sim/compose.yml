@@ -77,7 +77,7 @@ services:
   # seule l'adresse de l'autopilote change (sur le drone : port série /dev/ttyAMA0:921600).
   mavros:
     <<: *ros
-    command: ros2 launch /workspace/drone/droneload_bringup/launch/mavros.launch.py fcu_url:=udp://:14550@
+    command: ros2 launch /workspace/drone/src/droneload_bringup/launch/mavros.launch.py fcu_url:=udp://:14550@
 
   # Capteurs simulés Gazebo -> topics ROS 2 (sur le drone : nœuds drivers)
   bridge:

@@ -70,18 +70,44 @@
   when: boot_pi.stat.exists
   register: uart_config
 
+# Ubuntu (flash-kernel, démarrage A/B) : config.txt contient os_prefix=current/, le firmware lit
+# current/cmdline.txt et non le cmdline.txt de la racine ; à chaque nouveau noyau, flash-kernel recopie
+# current/cmdline.txt dans new/. console=serial0 y est par défaut : selon le firmware de la Pi, serial0
+# est l'UART de debug (ttyAMA10) ou celui des GPIO 14/15 (ttyAMA0, la Pixhawk). On corrige tous les
+# cmdline.txt présents.
+- name: Fichiers cmdline.txt présents (racine, current/, new/, old/)
+  ansible.builtin.stat:
+    path: "/boot/firmware/{{ item }}cmdline.txt"
+  loop: ["", "current/", "new/", "old/"]
+  register: cmdlines
+  when: boot_pi.stat.exists
+
 - name: Pas de console Linux sur le port de la Pixhawk
   ansible.builtin.replace:
-    path: /boot/firmware/cmdline.txt
+    path: "{{ item.stat.path }}"
     regexp: '\s*console=(serial0|ttyAMA0)\S*'
     replace: ''
-  when: boot_pi.stat.exists
+  loop: "{{ cmdlines.results | default([]) | selectattr('stat', 'defined') | selectattr('stat.exists') | list }}"
+  loop_control:
+    label: "{{ item.stat.path }}"
   register: uart_cmdline
 
 - name: Pas de login sur le port de la Pixhawk
   ansible.builtin.systemd_service:
     name: serial-getty@ttyAMA0.service
     masked: true
+  when: boot_pi.stat.exists and systemd_actif.stat.exists
+
+# ModemManager sonde les ports série qui apparaissent ; rpi-eeprom-update met à jour le firmware de la
+# Pi tout seul, ce qui peut changer l'UART derrière serial0. Mise à jour du firmware : à la main.
+- name: Pas de ModemManager ni de mise à jour automatique du firmware de la Pi
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+    masked: true
+  loop:
+    - ModemManager.service
+    - rpi-eeprom-update.service
   when: boot_pi.stat.exists and systemd_actif.stat.exists
 
 - name: Groupe gpio (accès aux puces GPIO, comme sur Raspberry Pi OS)
@@ -97,9 +123,34 @@
       # DroneLoad (install/roles/pi) : sans ces règles, ces périphériques sont réservés à root sous Ubuntu
       SUBSYSTEM=="gpio", KERNEL=="gpiochip*", GROUP="gpio", MODE="0660"
       SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660"
+      # Wifi sans économie d'énergie : sinon latence de plusieurs centaines de ms sur MQTT et la vidéo
+      ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlan*", RUN+="/usr/sbin/iw dev %k set power_save off"
     mode: "0644"
   when: boot_pi.stat.exists
   notify: Recharger udev
+
+# Liaison filaire directe avec le PC. Pas de passerelle : la route par défaut (internet) reste au wifi.
+# Les wifi (noms, mots de passe) ne sont pas dans le repo : saisis au flash (Raspberry Pi Imager).
+- name: IP fixe sur eth0
+  ansible.builtin.copy:
+    dest: /etc/netplan/60-droneload-eth0.yaml
+    content: |
+      # DroneLoad (install/roles/pi) : complète 50-cloud-init.yaml
+      network:
+        version: 2
+        ethernets:
+          eth0:
+            dhcp4: false
+            addresses: [{{ droneload_eth0_ip }}]
+            optional: true
+    mode: "0600"
+  when: boot_pi.stat.exists
+  register: netplan_eth0
+
+- name: Vérification de la configuration réseau (appliquée au prochain démarrage)
+  ansible.builtin.command: netplan generate
+  changed_when: false
+  when: boot_pi.stat.exists and netplan_eth0 is changed
 
 - name: Accès au port série, à la caméra et aux GPIO pour l'utilisateur du code du drone
   ansible.builtin.user:
@@ -130,8 +181,8 @@
 
 - name: Redémarrage nécessaire pour le matériel de la Pi
   ansible.builtin.debug:
-    msg: "config.txt, cmdline.txt ou logind modifié : redémarrer la Pi (sudo reboot) pour activer /dev/ttyAMA0, la caméra et le bouton"
-  when: uart_config is changed or uart_cmdline is changed or logind_config is changed
+    msg: "config.txt, cmdline.txt, logind ou réseau modifié : redémarrer la Pi (sudo reboot) pour activer /dev/ttyAMA0, la caméra, le bouton et l'IP fixe"
+  when: uart_config is changed or uart_cmdline is changed or logind_config is changed or netplan_eth0 is changed
 
 - name: Pas de mise à jour automatique (une mise à jour peut changer le système la veille d'un vol)
   ansible.builtin.copy:

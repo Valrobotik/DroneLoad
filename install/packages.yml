@@ -29,9 +29,11 @@ pi:
   apt:
     - mosquitto               # broker MQTT local (dashboard, robot ESP32)
     - mosquitto-clients       # mosquitto_pub : alertes de install/check.py sur drone/logs
-    - gstreamer1.0-libcamera      # libcamerasrc (à valider sur Pi 5 avec la libcamera d'Ubuntu)
+    - gstreamer1.0-libcamera      # libcamerasrc de camera.py ; libcamera 0.2 d'Ubuntu 24.04 : PAS de Pi 5 (ipa_rpi_pisp absent)
     - libcamera-tools
+    - ros-{{ ros_distro }}-camera-ros   # libcamera 0.7 avec le Pi 5 (pisp, imx708) ; à essayer sur la Pi pour remplacer camera.py
     - python3-lgpio           # servos (gpiozero sur Pi 5)
+    - iw                      # wifi sans économie d'énergie (règle udev du rôle pi)
   pip:
     - gpiozero==2.0.1.post3
 
