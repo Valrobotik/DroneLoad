@@ -4,10 +4,10 @@ Le code embarqué est découpé en **nœuds ROS 2** (Jazzy) qui échangent des m
 
 ## Paquets
 
-Tout est dans `drone/`, qui est un workspace colcon avec un paquet par rôle :
+`drone/` est un workspace colcon ; les paquets, un par rôle, sont dans `drone/src/` :
 
 ```
-drone/
+drone/src/
 ├── droneload_bringup/            # lancement et paramètres (sans code)
 │   ├── launch/drone.launch.py    # lance tout
 │   ├── launch/mavros.launch.py   # MAVROS, seule configuration (drone et simu)
@@ -161,7 +161,7 @@ ros2 launch droneload_bringup drone.launch.py sim:=true           # simulation (
 | `fcu_url` | `/dev/ttyAMA0:921600` | liaison MAVROS → Pixhawk (argument de `mavros.launch.py`) ; sur un port série, MAVROS n'est pas lancé si le port est absent, inaccessible ou déjà ouvert par un autre programme (raison répétée toutes les 10 s sur `drone/logs`, corriger puis `restart_script`) |
 | `model` | `models/best_ncnn_model` | modèle YOLO |
 
-Les autres réglages (hauteur de décollage, résolution, broker...) sont dans `drone/droneload_bringup/config/drone.yaml`. La calibration de la caméra est dans `config/camera/module3_640x480.yaml` : la refaire avec `tools/calibration.py` sur la Pi (photos d'un damier), qui réécrit ce fichier. Si la résolution change, il faut une nouvelle calibration (#68).
+Les autres réglages (hauteur de décollage, résolution, broker...) sont dans `drone/src/droneload_bringup/config/drone.yaml`. La calibration de la caméra est dans `config/camera/module3_640x480.yaml` : la refaire avec `tools/calibration.py` sur la Pi (photos d'un damier), qui réécrit ce fichier. Si la résolution change, il faut une nouvelle calibration (#68).
 
 Ce que lance chaque mode :
 

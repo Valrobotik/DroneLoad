@@ -16,10 +16,11 @@ Références complètes, positions des capteurs et masse estimée : section « M
 
 ```
 drone/               code embarqué (Raspberry Pi) : workspace ROS 2, voir docs/architecture.md
-  droneload_bringup/ lancement (drone.launch.py) et paramètres (drone.yaml)
-  droneload_vol/     nœud principal, interface MAVROS, missions (décollage, atterrissage, épreuves)
-  droneload_vision/  détection YOLO (traitement d'image seulement)
-  droneload_hardware/ entrées/sorties : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT
+  src/               paquets ROS 2 :
+    droneload_bringup/  lancement (drone.launch.py) et paramètres (drone.yaml)
+    droneload_vol/      nœud principal, interface MAVROS, missions (décollage, atterrissage, épreuves)
+    droneload_vision/   détection YOLO (traitement d'image seulement)
+    droneload_hardware/ entrées/sorties : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT
 tools/               scripts autonomes (calibration caméra -> config/camera/)
 ground/              PC de pilotage : dashboard MQTT + lanceur (macOS, Linux, Windows)
   requirements.txt
@@ -102,7 +103,7 @@ Sur le PC, depuis la racine du repo :
 ```
 Le script ouvre la fenêtre vidéo GStreamer (UDP 5000) et lance le dashboard dans le terminal. Sur macOS, `ground/dashboard.command` fait la même chose en double-clic.
 
-Les réglages du drone (hauteur de décollage, résolution, ports, broker) sont dans `drone/droneload_bringup/config/drone.yaml`.
+Les réglages du drone (hauteur de décollage, résolution, ports, broker) sont dans `drone/src/droneload_bringup/config/drone.yaml`.
 
 ## Simulation
 

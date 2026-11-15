@@ -40,7 +40,7 @@ FORWARDED_NODES = {'main_node', 'vision', 'aruco', 'gstream', 'camera', 'servo'}
 HOOK_STATES = {'hook_open': True, 'hook_close': False}
 BILAN_DELAY = 20.0    # s après le lancement : Pixhawk connectée, caméra ouverte, modèle chargé
 MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN = 246
-REPO = Path(__file__).resolve().parents[3]   # --symlink-install : drone/<paquet>/<paquet>/ -> racine du repo
+REPO = Path(__file__).resolve().parents[4]   # --symlink-install : drone/src/<paquet>/<paquet>/ -> racine du repo
 
 
 def cpu_temperature():

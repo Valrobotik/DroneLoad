@@ -2,7 +2,7 @@
 
   Drone réel : inclus par drone.launch.py (fcu_url par défaut : port série de la Pi)
   Simulation : service mavros de sim/compose.yml, lancé par chemin (sans colcon build) :
-               ros2 launch drone/droneload_bringup/launch/mavros.launch.py fcu_url:=udp://:14550@
+               ros2 launch drone/src/droneload_bringup/launch/mavros.launch.py fcu_url:=udp://:14550@
 
 Toute modification de MAVROS (plugins, paramètres) se fait ici, pour être testée en simu.
 
