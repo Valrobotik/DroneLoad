@@ -8,7 +8,7 @@ import math
 import time
 
 from geographic_msgs.msg import GeoPointStamped
-from mavros_msgs.msg import PositionTarget, State
+from mavros_msgs.msg import GPSRAW, PositionTarget, State
 from mavros_msgs.srv import CommandBool, CommandTOL, MessageInterval, SetMode
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Range
@@ -17,7 +17,10 @@ from sensor_msgs.msg import Range
 STREAMS = {
     173: 20.0,   # RANGEFINDER (lidar brut) -> /mavros/rangefinder/rangefinder
     1: 1.0,      # SYS_STATUS (batterie) -> /mavros/battery
+    24: 1.0,     # GPS_RAW_INT (fix GPS ; jamais envoyé sans GPS configuré) -> /mavros/gpsstatus/gps1/raw
 }
+# Sans GPS_RAW_INT ce délai (s) après la demande des flux, l'autopilote n'a pas de GPS (config intérieure)
+GPS_TIMEOUT = 3.0
 # Sans mesure lidar depuis ce délai (s), les flux sont redemandés : un autopilote qui redémarre
 # (SITL relancé, Pixhawk rebranchée) les oublie, parfois sans que MAVROS voie de déconnexion
 STREAM_TIMEOUT = 1.0
@@ -26,7 +29,7 @@ STREAM_TIMEOUT = 1.0
 ALT_MAX_AGE = 0.5
 # Plage valide du lidar (m), alignée sur RNGFND1_MIN / RNGFND1_MAX de config/ardupilot/pixhawk.param :
 # hors plage (inf, nan, 0 quand le MTF-01 perd le sol), la hauteur est inconnue
-LIDAR_MIN = 0.05
+LIDAR_MIN = 0.01
 LIDAR_MAX = 8.0
 
 # Masque de PositionTarget : seules les vitesses et la vitesse de lacet sont prises en compte
@@ -38,12 +41,16 @@ VELOCITY_ONLY = (PositionTarget.IGNORE_PX | PositionTarget.IGNORE_PY | PositionT
 class MavrosDrone:
     def __init__(self, node, origin):
         """origin : (latitude, longitude, altitude) de l'origine EKF fictive. Sans GPS, ArduPilot
-        en a besoin pour passer en GUIDED ; elle est envoyée tant que le drone n'est pas armé."""
+        en a besoin pour passer en GUIDED ; elle est envoyée tant que le drone n'est pas armé, et
+        seulement si l'autopilote n'a aucun GPS configuré (GPS1_TYPE 0, config intérieure : pas de
+        GPS_RAW_INT) : avec un GPS (config extérieure), même sans fix, l'origine vient
+        du GPS et une origine fictive la fausserait."""
         self.node = node
         self.log = node.get_logger()
         self.origin = origin
         self.state = State()
         self.altitude = None          # distance lidar (m), None sans mesure valide
+        self.gps = None               # GPS configuré sur l'autopilote ? None : pas encore su
         self._streams_requested = False
         self._range_time = 0.0          # time.monotonic() de la dernière mesure lidar
         self._streams_time = 0.0        # time.monotonic() de la dernière demande des flux
@@ -51,6 +58,7 @@ class MavrosDrone:
         node.create_subscription(State, '/mavros/state', self._on_state, 10)
         node.create_subscription(Range, '/mavros/rangefinder/rangefinder', self._on_range,
                                  qos_profile_sensor_data)
+        node.create_subscription(GPSRAW, '/mavros/gpsstatus/gps1/raw', self._on_gps, qos_profile_sensor_data)
         self.setpoint_pub = node.create_publisher(PositionTarget, '/mavros/setpoint_raw/local', 10)
         self.origin_pub = node.create_publisher(GeoPointStamped, '/mavros/global_position/set_gp_origin', 10)
 
@@ -120,6 +128,7 @@ class MavrosDrone:
         if msg.connected != self.state.connected:
             self.log.info('Autopilote connecté' if msg.connected else 'Autopilote DÉCONNECTÉ')
             self._streams_requested = False
+            self.gps = None
         self.state = msg
 
     def _on_range(self, msg):
@@ -131,6 +140,13 @@ class MavrosDrone:
             self.altitude = None
             self.log.warning(f'Mesure lidar hors plage ignorée : {msg.range}', throttle_duration_sec=1.0)
 
+    def _on_gps(self, msg):
+        # ArduPilot n'envoie GPS_RAW_INT qu'avec un GPS configuré : tout message veut dire « GPS présent »,
+        # même fix_type 0 (envoyé au démarrage, avant que le GPS soit détecté)
+        if self.gps is not True:
+            self.log.info(f'GPS présent (fix_type {msg.fix_type}) : pas d\'origine EKF fictive')
+        self.gps = True
+
     def _housekeeping(self):
         """Toutes les secondes : demande les flux MAVLink et envoie l'origine EKF tant que nécessaire."""
         if not self.connected:
@@ -139,13 +155,19 @@ class MavrosDrone:
         if self._streams_requested and now - max(self._range_time, self._streams_time) > STREAM_TIMEOUT:
             self.log.warning('Plus de mesure lidar : flux MAVLink redemandés', throttle_duration_sec=10.0)
             self._streams_requested = False
+            self.gps = None   # autopilote redémarré : sa config a pu changer
         if not self._streams_requested:
             self._streams_time = now   # laisse STREAM_TIMEOUT au flux pour arriver
             self._streams_requested = all([
                 self._call(self.interval_client, MessageInterval.Request(message_id=msg_id, message_rate=rate),
                            f'flux MAVLink {msg_id}')
                 for msg_id, rate in STREAMS.items()])
-        if not self.armed:
+        # Origine fictive seulement si l'autopilote n'a aucun GPS : pas de GPS_RAW_INT GPS_TIMEOUT après
+        # la demande des flux (ArduPilot ne l'envoie pas sans GPS configuré)
+        if self.gps is None and self._streams_requested and now - self._streams_time > GPS_TIMEOUT:
+            self.log.info('Pas de GPS_RAW_INT : autopilote sans GPS, origine EKF fictive')
+            self.gps = False
+        if not self.armed and self.gps is False:
             msg = GeoPointStamped()
             msg.header.stamp = self.node.get_clock().now().to_msg()
             msg.position.latitude, msg.position.longitude, msg.position.altitude = self.origin

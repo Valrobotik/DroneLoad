@@ -1,0 +1,25 @@
+# Surcouche intérieure (volière, concours) : à charger PAR-DESSUS pixhawk.param (Mission Planner :
+# Full Parameter List > Load from file : seules ces lignes changent > Write Params, puis redémarrer).
+# Retour à la config extérieure avec GPS : recharger pixhawk.param. N'y mettre que ce qui diffère entre
+# l'intérieur et l'extérieur ; tout le reste se règle dans pixhawk.param. La simu (volière) la charge aussi.
+# Valeurs reprises de la config intérieure sauv_v3 (avant les essais GPS).
+
+# GPS du M8N ignoré : en intérieur pas de fix, et l'armement en GUIDED l'exigerait
+GPS1_TYPE,0
+# Sources EKF, jeu 1 : flux optique (vitesse horizontale) + lidar (hauteur), cap au compas, pas de position absolue
+EK3_SRC1_POSXY,0
+EK3_SRC1_POSZ,2
+EK3_SRC1_VELXY,5
+EK3_SRC1_VELZ,0
+EK3_SRC1_YAW,1
+# Jeu 2 (voie RC9) : flux optique + baromètre
+EK3_SRC2_POSXY,0
+EK3_SRC2_POSZ,1
+EK3_SRC2_VELXY,5
+EK3_SRC2_VELZ,0
+EK3_SRC2_YAW,1
+# Modes de la voie 6 : FlowHold (position 4) et Guided (position 6) au lieu de PosHold et Loiter (GPS)
+FLTMODE4,22
+FLTMODE6,4
+# Contrôles d'armement : tous sauf ceux du GPS (fix, configuration) ; ne jamais en sauter d'autres
+ARMING_SKIPCHK,1053192
