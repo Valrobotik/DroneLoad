@@ -28,7 +28,7 @@ TAKEOFF_ALT = 1.0      # = takeoff_altitude de drone.yaml
 ALT_TOLERANCE = 0.2    # m
 HOLD_TIME = 5.0        # s en attente
 CYCLES = 2
-ARUCO_ID = '0'           # ArUco au sol sous le drone au départ (sim/worlds/voliere.sdf)
+ARUCO_ID = '0'           # ArUco au sol sous le drone au départ (ARUCO_0 de sim/tools/generate_voliere.py)
 ARUCO_Z = 0.012          # m, hauteur du marqueur au-dessus du sol
 ARUCO_TOLERANCE = 0.05   # m, écart toléré entre la distance au marqueur et la hauteur lidar
 ARUCO_MAX_OFFSET = 0.25  # m, décalage horizontal maximal (le marqueur sort du champ au-delà)
