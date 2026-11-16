@@ -3,13 +3,14 @@
 <package format="3">
   <name>droneload_hardware</name>
   <version>0.1.0</version>
-  <description>Matériel et liaisons : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT (dashboard, ESP32)</description>
+  <description>Matériel et liaisons : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT (dashboard, ESP32), position UWB vers la Pixhawk</description>
   <maintainer email="droneload@todo.invalid">Équipe DroneLoad</maintainer>
   <license>TODO: License declaration</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>mavros_msgs</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>cv_bridge</exec_depend>

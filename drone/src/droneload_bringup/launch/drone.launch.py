@@ -84,6 +84,9 @@ def nodes(context):
     ]
     if not sim:
         actions.append(node('droneload_hardware', 'camera', calibration_file=str(CALIBRATION)))
+    if not vision_only:
+        # Position UWB -> Pixhawk (MAVROS) ; /uwb/pose vient du service uwb en simu
+        actions.append(node('droneload_hardware', 'position_ext'))
     if not sim and not vision_only:
         # En simu, la même configuration MAVROS est lancée par le service mavros de sim/compose.yml
         # fcu_url:= passé en ligne de commande arrive directement à mavros.launch.py

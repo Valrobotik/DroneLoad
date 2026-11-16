@@ -69,7 +69,7 @@ services:
     command: >
       /usr/local/bin/arducopter --model JSON --sim-address 127.0.0.1 --speedup 1 -I0 -w
       --home 45.7838,4.8722,170,0
-      --defaults /opt/ardupilot/params/copter.parm,/workspace/config/ardupilot/pixhawk.param${PARAM_SURCOUCHE:+,/workspace/config/ardupilot/${PARAM_SURCOUCHE}.param},/workspace/config/ardupilot/sitl.parm
+      --defaults /opt/ardupilot/params/copter.parm,/workspace/config/ardupilot/pixhawk.param${PARAM_SURCOUCHE:+,/workspace/config/ardupilot/${PARAM_SURCOUCHE}.param}${PARAM_UWB:+,/workspace/config/ardupilot/${PARAM_UWB}.param},/workspace/config/ardupilot/sitl.parm
       --serial0 tcp:0
       --serial1 udpclient:127.0.0.1:14550
 
@@ -85,6 +85,12 @@ services:
     image: droneload-sim
     build: *build-sim
     command: ros2 run ros_gz_bridge parameter_bridge --ros-args -p config_file:=/workspace/sim/bridge.yaml
+
+  # Capteur UWB simulé (sur le drone : tag DWM1001 lu par la Pi) : /sim/drone/pose -> /uwb/pose
+  # Panne : docker compose exec companion bash -lc 'ros2 param set /uwb_sim actif false'
+  uwb:
+    <<: *ros
+    command: python3 /workspace/sim/scripts/uwb_sim.py
 
   # Conteneur de développement : docker compose exec companion bash
   companion:

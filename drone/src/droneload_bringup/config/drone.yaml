@@ -30,6 +30,13 @@ gstream:
     port: 5000                    # UDP, reçu par ground/launch.py
     fps: 15
 
+position_ext:
+  ros__parameters:
+    cap_ancres: 0.0               # degrés : axe x des ancres UWB par rapport à l'est (sens trigo) ; 0 en simu (Gazebo en ENU)
+    origine: [0.0, 0.0, 0.0]      # m, ajoutée après rotation (repère map de MAVROS)
+    age_max: 0.3                  # s : mesure UWB plus vieille jetée (ArduPilot suppose un retard fixe, VISO_DELAY_MS)
+    delai_perte: 1.0              # s sans mesure avant de signaler l'UWB perdu
+
 mqtt_server:
   ros__parameters:
     broker_ip: 127.0.0.1          # broker mosquitto local (Pi ou service mqtt de la simu)

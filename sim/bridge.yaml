@@ -33,3 +33,11 @@
   ros_type_name: sensor_msgs/msg/CameraInfo
   gz_type_name: gz.msgs.CameraInfo
   direction: GZ_TO_ROS
+
+# Vérité terrain : pose du drone dans le monde Gazebo (ENU, comme le repère map de MAVROS).
+# Pour le capteur UWB simulé (sim/scripts/uwb_sim.py) et les tests ; jamais utilisée par le code du drone.
+- ros_topic_name: /sim/drone/pose
+  gz_topic_name: /model/drone/pose
+  ros_type_name: geometry_msgs/msg/PoseStamped
+  gz_type_name: gz.msgs.Pose
+  direction: GZ_TO_ROS

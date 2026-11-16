@@ -1,0 +1,25 @@
+# Surcouche UWB : à charger PAR-DESSUS interieur.param (Mission Planner : Full Parameter List >
+# Load from file > Write Params, puis redémarrer : VISO_TYPE n'est pris en compte qu'au démarrage).
+# Seulement avec le système UWB installé (tag DWM1001 lu par la Pi, nœud position_ext) ; sans lui,
+# recharger interieur.param (sinon l'armement est refusé : « PreArm: VisOdom: not healthy »).
+# En simu : PARAM_UWB=uwb (sim/.env, vide par défaut).
+# N'y mettre que ce qui concerne l'UWB ; le reste se règle dans pixhawk.param ou interieur.param.
+
+# Position externe reçue de la Pi par MAVLink (VISION_POSITION_ESTIMATE, /mavros/vision_pose/pose_cov)
+VISO_TYPE,1
+# Position du tag UWB sur le drone (m, avant/droite/bas depuis le centre) : 0 en simu, à mesurer sur le drone
+VISO_POS_X,0
+VISO_POS_Y,0
+VISO_POS_Z,0
+# Retard supposé de chaque mesure (ArduPilot ne lit pas l'horodatage) : 50 ms en simu, à mesurer avec PANS
+VISO_DELAY_MS,50
+# Bruit de position de l'UWB (m) : poids donné à l'UWB face au flux optique
+VISO_POS_M_NSE,0.15
+# Sources EKF, jeu 1 : position UWB + vitesse du flux optique (en parallèle) + hauteur au lidar, cap au compas
+EK3_SRC1_POSXY,6
+EK3_SRC1_VELXY,5
+EK3_SRC1_POSZ,2
+# Jeu 2 (voie RC9) : secours en cas de panne d'UWB, flux optique + lidar (même hauteur que le jeu 1)
+EK3_SRC2_POSXY,0
+EK3_SRC2_VELXY,5
+EK3_SRC2_POSZ,2

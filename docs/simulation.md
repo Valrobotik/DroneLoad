@@ -37,6 +37,13 @@ docker compose logs -f drone
 docker compose restart drone                  # après une modification du code
 docker compose --profile drone down           # tout arrêter, y compris le drone
 ```
+
+Position UWB fusionnée dans l'EKF (surcouche `uwb.param`, vide par défaut comme sur le vrai drone sans UWB ; elle empêche l'armement sans UWB, donc `smoke_test.py` échoue avec elle) :
+
+```bash
+PARAM_UWB=uwb docker compose --profile drone up -d
+docker compose exec companion bash -lc 'python3 sim/scripts/uwb_test.py'      # stationnaire, panne d'UWB, jeu de sources 2 ; EKF comparé à la vérité Gazebo
+```
 Le dashboard se branche comme sur le vrai drone : `.venv/bin/python ground/launch.py --broker localhost`, avec le flux vidéo annoté.
 
 Ouvrir un shell ROS 2 dans la simu (l'environnement ROS 2 est chargé par le shell ; pour une commande isolée, passer par `bash -lc '...'`). Dans les conteneurs, le dossier courant est la racine du repo :
@@ -58,6 +65,7 @@ Les tests (de bout en bout dans la simu) et leur lanceur sont décrits dans [tes
 | `sitl` | ArduCopter ; paramètres `config/ardupilot/*.parm`, rechargés à chaque démarrage |
 | `mavros` | MAVLink ↔ ROS 2 (`/mavros/...`), avec le même `mavros.launch.py` que sur le drone |
 | `bridge` | capteurs Gazebo → ROS 2 (`sim/bridge.yaml`) |
+| `uwb` | UWB simulé (`sim/scripts/uwb_sim.py`) : vérité terrain Gazebo (`/sim/drone/pose`) dégradée comme un tag DWM1001 (10 Hz, bruit 0,10 m, pertes) → `/uwb/pose` ; panne : `ros2 param set /uwb_sim actif false` |
 | `companion` | conteneur de développement (tests, `ros2 topic ...`) |
 | `drone` | profil `drone` : code du drone (`drone.launch.py sim:=true`), relancé après `restart_script` |
 | `mqtt` | broker MQTT, même rôle que le mosquitto de la Pi |
@@ -126,7 +134,7 @@ Par défaut, le code du drone (service `drone`) utilise tout le PC : un code qui
 
 - **Monde** : `sim/worlds/voliere.sdf`. Les ArUco (DICT_4X4_50, carré noir de 20 cm dans des boîtes de 24 cm, la texture ayant une marge blanche) sont des textures de `sim/models/aruco_markers/`, régénérables avec `python sim/tools/generate_aruco.py`.
 - **Drone** : `sim/models/droneload_drone/model.sdf`, dérivé de `iris_with_ardupilot` (ardupilot_gazebo) avec en plus les caméras et le lidar du MTF-01. Géométrie, masse et poussée restent celles de l'iris (1,6 kg, hélices de 10"), proches du vrai drone (Tarot FY450, moteurs 2216 920 KV, hélices 1045, ~1,5 kg estimé) : à recaler seulement si la pesée s'en écarte nettement. Le lidar est placé comme sur le drone, 10 cm en arrière du centre.
-- **Paramètres autopilote** : `config/ardupilot/pixhawk.param`, le fichier unique de la vraie Pixhawk (export Mission Planner, voir `docs/architecture.md`), puis la surcouche `interieur.param` (config volière sans GPS, `PARAM_SURCOUCHE` de `sim/.env` ; `PARAM_SURCOUCHE= docker compose up -d` pour la config extérieure avec le GPS simulé), puis `sitl.parm` qui ne remplace que le matériel simulé (moteurs, capteurs, calibrations). Les paramètres changés depuis QGC sont perdus au redémarrage du SITL : reportez-les dans `pixhawk.param`.
+- **Paramètres autopilote** : `config/ardupilot/pixhawk.param`, le fichier unique de la vraie Pixhawk (export Mission Planner, voir `docs/architecture.md`), puis la surcouche `interieur.param` (config volière sans GPS, `PARAM_SURCOUCHE` de `sim/.env` ; `PARAM_SURCOUCHE= docker compose up -d` pour la config extérieure avec le GPS simulé), puis, avec `PARAM_UWB=uwb`, la surcouche `uwb.param` (position UWB), puis `sitl.parm` qui ne remplace que le matériel simulé (moteurs, capteurs, calibrations). Les paramètres changés depuis QGC sont perdus au redémarrage du SITL : reportez-les dans `pixhawk.param`.
 - **Version d'ArduPilot** : `ARDUPILOT_TAG` dans `sim/.env`, puis `docker compose build sitl`. Elle doit correspondre au firmware de la Pixhawk.
 - **Dépendances** : tout s'installe via `install/` (Ansible), utilisé par les Dockerfiles de `sim/docker/` et par la Pi. Ajouter le paquet (apt ou pip, version figée) dans `install/packages.yml`, puis `docker compose build` (voir `install/README.md`).
 
@@ -140,7 +148,7 @@ Sur Mac, les ports publiés sont les mêmes : une seule simu à la fois par mach
 
 ## Dépannage
 
-- **Remettre le drone au départ** : le monde n'est pas réinitialisé entre deux vols. Drone posé et désarmé, `./scripts/reset_drone.sh` (depuis `sim/`) le replace sur l'ArUco 0 et redémarre le SITL (prêt à armer ~30 s plus tard). Pour tout remettre à zéro : `docker compose down && docker compose up -d`. Ne jamais redémarrer `gz-server` seul : les autres services partagent son réseau (`network_mode: service:gz-server`) et perdent alors tous les topics.
+- **Remettre le drone au départ** : le monde n'est pas réinitialisé entre deux vols. Drone posé et désarmé, `./scripts/reset_drone.sh` (depuis `sim/`) le replace sur l'ArUco 0 et redémarre le SITL (prêt à armer ~30 s plus tard). `./scripts/reset_drone.sh 90` le pose tourné de 90° (vers le nord). Pour tout remettre à zéro : `docker compose down && docker compose up -d`. Ne jamais redémarrer `gz-server` seul : les autres services partagent son réseau (`network_mode: service:gz-server`) et perdent alors tous les topics.
 
 - **`docker compose build` échoue sur le SITL** : vérifier que `ARDUPILOT_TAG` existe (`git ls-remote --tags https://github.com/ArduPilot/ardupilot.git | grep Copter-`).
 - **Le test de fumée reste bloqué à l'armement** : `docker compose logs sitl` et, dans QGC, les messages de pré-armement.

@@ -27,7 +27,8 @@ drone/                            # workspace colcon (build/, install/, log/ cr�
             ├── camera.py             # caméra Module 3 (Pi seulement)
             ├── servo.py              # servo du crochet (GPIO 13)
             ├── gstream.py            # flux vidéo vers le PC
-            └── mqtt_server.py        # dashboard et ESP32 (MQTT)
+            ├── mqtt_server.py        # dashboard et ESP32 (MQTT)
+            └── position_ext.py       # position UWB -> Pixhawk (position externe)
 ```
 
 Chaque paquet contient aussi `package.xml` (dépendances ROS), `setup.py` (liste des nœuds exécutables) et `setup.cfg`. Les paquets sont dans `drone/src/` (disposition standard d'un workspace colcon) et le code se trouve dans `drone/src/<paquet>/<paquet>/`, car ament_python impose ce double niveau.
@@ -50,9 +51,11 @@ flowchart LR
     aru[aruco]
     gst[gstream]
     servo[servo]
+    pext[position_ext]
     mavros[MAVROS]
   end
   px[Pixhawk]
+  uwb[tag UWB]
 
   dash <--> broker
   esp <--> broker
@@ -66,6 +69,8 @@ flowchart LR
   vis -- /camera/annotated --> gst
   gst -- RTP/JPEG UDP 5000 --> vid
   main <-- /mavros/... --> mavros
+  uwb -- /uwb/pose --> pext
+  pext -- /mavros/vision_pose/pose_cov --> mavros
   mavros <-- série 921600 --> px
 ```
 
@@ -84,6 +89,9 @@ flowchart LR
 | `/hook/ready` | `std_msgs/Bool`, chaque seconde : true si le crochet est utilisable (GPIO ouvert, ou mock) | `servo` | `mqtt_server` |
 | `/mavros/state`, `/mavros/rangefinder/rangefinder` | MAVROS | MAVROS | `main_node` |
 | `/mavros/battery` | `sensor_msgs/BatteryState` | MAVROS | `mqtt_server` |
+| `/uwb/pose` | `geometry_msgs/PoseWithCovarianceStamped` : position du tag UWB dans le repère des ancres, 10 Hz, orientation à l'identité (PANS ne donne pas de cap) | pilote série du tag (à venir), service `uwb` (simu, `sim/scripts/uwb_sim.py`) | `position_ext`, `mqtt_server` (`uwb_hz`) |
+| `/mavros/vision_pose/pose_cov` | `geometry_msgs/PoseWithCovarianceStamped`, repère `map` (ENU) | `position_ext` | MAVROS → `VISION_POSITION_ESTIMATE` (EKF, `uwb.param`) |
+| `/sim/drone/pose` | `geometry_msgs/PoseStamped` : vérité terrain Gazebo (ENU), simu seulement, jamais lue par le code du drone | `bridge` | service `uwb`, `sim/scripts/uwb_test.py` |
 
 `/mission/mode`, `/mission/target_class` et `/mission/state` sont en QoS *transient local* : un nœud qui (re)démarre reçoit la dernière valeur. Les images et les détections sont publiées en QoS capteur (*best effort*, file de 5). `vision` et `aruco` s'abonnent à `/camera/image_raw` avec une file d'une seule image (`LATEST_IMAGE`) : quand le traitement est plus lent que la caméra, ils reçoivent la plus récente et non la plus ancienne des images en attente (mesuré en simu avec les limites de la Pi : détections vieilles de 1,5 s avec la file de 5, 0,45 s avec la file de 1, soit le temps d'inférence).
 
@@ -123,7 +131,7 @@ Il est inchangé depuis 2026 : `ground/dashboard.py` et l'ESP32 n'ont rien à mo
 | `drone/cmd` | PC → drone | JSON `{"action": ...}` : `set_mode` (`mode`), `set_class` (`class_name`), `set_hook` (`state` : `hook_open` / `hook_close`), `arm`, `disarm` |
 | `drone/system` | PC → drone | `reboot`, `restart_script`, `shutdown`, `reboot_fcu` (redémarre la Pixhawk : `MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN` par `/mavros/cmd/command`) ; refusés si le drone est armé |
 | `drone/logs` | drone → PC | texte : messages de `mqtt_server` et logs des autres nœuds |
-| `drone/telemetry` | drone → PC | JSON chaque seconde : `fps` (images analysées par la vision), `cam_fps` (images de la caméra, comptées sur `/camera/camera_info`), `hook_ready` (crochet utilisable ; `false` aussi si `servo` ne publie plus depuis 2,5 s, `null` si jamais reçu), `cpu_percent`, `cpu_temp` (°C ou `null`), `undervoltage` (alarme de sous-tension de la Pi 5, `null` ailleurs ; chaque passage est signalé sur `drone/logs` et compté dans le bilan de démarrage), `ram_percent`, `flight_time_sec` (temps armé du vol en cours, sinon du dernier vol ; « Vol terminé » sur `drone/logs` au désarmement), `mode` (dernier mode demandé), `mission` (état réel de `main_node`, ex. `takeoff:MONTEE`), `fcu_connected`, `fcu_mode`, `armed` (MAVROS), `height` (lidar en m, `null` sans mesure depuis 1 s), `batt_v`, `batt_pct`, `esp_connected` |
+| `drone/telemetry` | drone → PC | JSON chaque seconde : `fps` (images analysées par la vision), `cam_fps` (images de la caméra, comptées sur `/camera/camera_info`), `hook_ready` (crochet utilisable ; `false` aussi si `servo` ne publie plus depuis 2,5 s, `null` si jamais reçu), `cpu_percent`, `cpu_temp` (°C ou `null`), `undervoltage` (alarme de sous-tension de la Pi 5, `null` ailleurs ; chaque passage est signalé sur `drone/logs` et compté dans le bilan de démarrage), `ram_percent`, `flight_time_sec` (temps armé du vol en cours, sinon du dernier vol ; « Vol terminé » sur `drone/logs` au désarmement), `mode` (dernier mode demandé), `mission` (état réel de `main_node`, ex. `takeoff:MONTEE`), `fcu_connected`, `fcu_mode`, `armed` (MAVROS), `height` (lidar en m, `null` sans mesure depuis 1 s), `batt_v`, `batt_pct`, `esp_connected`, `uwb_hz` (mesures `/uwb/pose` par seconde, 0 sans UWB) |
 | `robot/ping` | ESP32 → drone | heartbeat (déconnecté après 4 s sans ping) |
 
 **La commande `arm` arme réellement les moteurs.**
@@ -132,7 +140,7 @@ Un message mal formé (non JSON, champ manquant ou invalide) est signalé sur `d
 
 `restart_script` arrête tout le code du drone, qui est relancé par le service qui l'a démarré : Docker en simu (`restart: unless-stopped`), service systemd `droneload` sur la Pi (installé par `install/`, rôle `pi`, démarré au boot, `Restart=always` ; `journalctl -u droneload` pour ses logs). Les autres nœuds sont relancés seuls par le launch s'ils s'arrêtent (`respawn`, 2 s) ; seul l'arrêt de `mqtt_server` arrête tout.
 
-Bilan de démarrage : 20 s après son lancement, `mqtt_server` envoie deux lignes sur `drone/logs` (Pixhawk et son mode, lidar, batterie ; caméra, vision, crochet, résultat d'`install/check.py` sur la Pi), ce qui manque en majuscules. La Pixhawk ne redémarre pas avec la Pi (alimentation séparée) : `reboot_fcu` la redémarre, MAVROS se reconnecte seul.
+Bilan de démarrage : 20 s après son lancement, `mqtt_server` envoie deux lignes sur `drone/logs` (Pixhawk et son mode, lidar, batterie ; caméra, vision, crochet, UWB, résultat d'`install/check.py` sur la Pi), ce qui manque en majuscules. La Pixhawk ne redémarre pas avec la Pi (alimentation séparée) : `reboot_fcu` la redémarre, MAVROS se reconnecte seul.
 
 Pannes du matériel, toutes visibles sur le dashboard (concours 2026 : la Pi ne voyait plus la Pixhawk et rien ne le signalait) :
 - **double lancement** : `drone.launch.py` prend un verrou (`/tmp/droneload-drone.lock`) et refuse de démarrer si le code tourne déjà (service `droneload` sur la Pi) ;
@@ -172,6 +180,7 @@ Ce que lance chaque mode :
 | `camera` | lancé | lancé | — (le `bridge` publie les images) |
 | `servo` | GPIO | GPIO | mock (journal seulement) |
 | `main_node`, `vision`, `aruco`, `gstream`, `mqtt_server` | lancés | lancés | lancés |
+| `position_ext` | lancé | — | lancé (`/uwb/pose` vient du service `uwb`) |
 
 ## Ajouter un nœud
 
@@ -261,7 +270,25 @@ Les paramètres `MAVn_*` (débits de flux, options) sont numérotés par canal M
 | Contrôles d'armement | tous (`ARMING_SKIPCHK 0`) | tous sauf GPS (`ARMING_SKIPCHK 1053192`) |
 | Origine EKF | donnée par le GPS | fictive, envoyée par `mavros.py` tant que le drone est désarmé |
 
-`mavros.py` choisit seul : il demande `GPS_RAW_INT` et n'envoie l'origine fictive que si l'autopilote n'a aucun GPS : pas de `GPS_RAW_INT` 3 s après la demande (ArduPilot ne l'envoie pas sans GPS configuré ; un message, même `fix_type` 0 au démarrage, veut dire GPS présent) ; avec un GPS, même sans fix, il attend le GPS. L'état est réévalué quand l'autopilote redémarre. En extérieur, GUIDED et l'armement attendent donc le fix GPS. En intérieur, hauteur au lidar plutôt qu'au baromètre : le baromètre dérive (souffle des hélices) et l'altitude de décollage ne correspondrait plus à la hauteur lidar des missions ; en extérieur, la hauteur de l'EKF (donc la cible du décollage GUIDED) vient du baromètre, alors que les missions la vérifient au lidar. Quand l'UWB sera prêt : `EK3_SRC1_POSXY 6` (ExternalNav), le flux optique passant en secours. Lidar : `RNGFND1_TYPE 10` (MAVLink), vers le bas, plage 0,01-8 m (bornes reprises par `LIDAR_MIN/MAX` de `mavros.py`), `RNGFND1_GNDCLR` 0,10 m (distance lue drone posé), positions du flux et du lidar dans `FLOW_POS_*` / `RNGFND1_POS_*` (section Matériel). `ARMING_SKIPCHK` (ex-`ARMING_CHECK`) ne saute que les contrôles GPS : ne jamais désactiver les contrôles d'armement.
+`mavros.py` choisit seul : il demande `GPS_RAW_INT` et n'envoie l'origine fictive que si l'autopilote n'a aucun GPS : pas de `GPS_RAW_INT` 3 s après la demande (ArduPilot ne l'envoie pas sans GPS configuré ; un message, même `fix_type` 0 au démarrage, veut dire GPS présent) ; avec un GPS, même sans fix, il attend le GPS. L'état est réévalué quand l'autopilote redémarre. En extérieur, GUIDED et l'armement attendent donc le fix GPS. En intérieur, hauteur au lidar plutôt qu'au baromètre : le baromètre dérive (souffle des hélices) et l'altitude de décollage ne correspondrait plus à la hauteur lidar des missions ; en extérieur, la hauteur de l'EKF (donc la cible du décollage GUIDED) vient du baromètre, alors que les missions la vérifient au lidar. Position UWB : voir « UWB » ci-dessous. Lidar : `RNGFND1_TYPE 10` (MAVLink), vers le bas, plage 0,01-8 m (bornes reprises par `LIDAR_MIN/MAX` de `mavros.py`), `RNGFND1_GNDCLR` 0,10 m (distance lue drone posé), positions du flux et du lidar dans `FLOW_POS_*` / `RNGFND1_POS_*` (section Matériel). `ARMING_SKIPCHK` (ex-`ARMING_CHECK`) ne saute que les contrôles GPS : ne jamais désactiver les contrôles d'armement.
+
+### UWB (position externe)
+
+Système principal de position en intérieur (#17, #24) : 6 ancres DWM1001-DEV autour du terrain et un tag sur le drone (firmware PANS de Qorvo), lu par la Pi. La surcouche `config/ardupilot/uwb.param` se charge **par-dessus** `interieur.param`, seulement avec l'UWB installé : avec elle, ArduPilot refuse d'armer sans mesures UWB (« PreArm: VisOdom: not healthy »).
+
+| Jeu de sources (voie RC9) | Position horizontale | Vitesse horizontale | Hauteur | Usage |
+|---|---|---|---|---|
+| 1 | UWB (`EK3_SRC1_POSXY 6`, ExternalNav) | flux optique, en parallèle | lidar | normal |
+| 2 | aucune | flux optique | lidar | panne d'UWB |
+
+Chaîne : tag → `/uwb/pose` (repère des ancres) → `position_ext` → `/mavros/vision_pose/pose_cov` (repère `map`, ENU) → `VISION_POSITION_ESTIMATE` (`VISO_TYPE 1`). `position_ext` (réglages dans `drone.yaml`) :
+- tourne et décale la position : `cap_ancres` = angle de l'axe x des ancres par rapport à l'est, à mesurer sur le terrain. Le cap de l'EKF vient du compas : un repère des ancres mal orienté contredirait la vitesse du flux optique (spirales en stationnaire). En simu, Gazebo est déjà en ENU (0) ;
+- ne transmet que les mesures de moins de `age_max` (0,3 s) : ArduPilot ne lit pas l'horodatage et suppose un retard fixe (`VISO_DELAY_MS`) ;
+- signale sur `drone/logs` la perte de l'UWB (1 s sans mesure) et son retour.
+
+À régler sur le vrai drone : `VISO_POS_X/Y/Z` (position du tag), `VISO_DELAY_MS` (retard de PANS), `VISO_POS_M_NSE` (poids de l'UWB face au flux optique). Vérifié en simu (`PARAM_UWB=uwb`, `sim/scripts/uwb_test.py`) : stationnaire, panne de 5 s, bascule sur le jeu 2, drone tourné de 90° au départ (l'orientation à l'identité envoyée ne fait pas tourner la position).
+
+Secours le jour de la finale, sans changer le code : finale en extérieur → `pixhawk.param` seul (GPS) ; Marvelmind fourni par l'organisation, branché sur l'UART du port GPS1 à la place du GPS du M8N (compas gardé en I2C : câble séparateur) → configuration selon son protocole de sortie, encore à demander (NMEA : vu comme un GPS ; protocole balise : `BCN_TYPE 2`, `EK3_SRC1_POSXY 4`). Les missions lisent la position de l'EKF, jamais une source précise.
 
 ### Moteurs, batterie, radio, sécurités
 
@@ -282,7 +309,7 @@ Les paramètres `MAVn_*` (débits de flux, options) sont numérotés par canal M
 | Compensation de l'inclinaison de la caméra | #69 | positions des détections corrigées avec l'attitude (`/mavros/imu/data`), repère horizontal (tf2) |
 | AI HAT (Hailo) | #27 | backend `hailo` de `vision.py` (paramètre `backend`) |
 | Caméra de profondeur | #28, #34 | `realsense2_camera` sur `/stereo/...`, puis remplacer `DISTANCE_AVANT` de l'épreuve 2 |
-| UWB | #17, #24 | nœud qui publie `/uwb/pose` et l'envoie à `/mavros/vision_pose/pose` |
+| UWB | #17, #24 | pilote série du tag DWM1001 (PANS, commande `lep`) qui publie `/uwb/pose` ; le reste de la chaîne est prêt et testé en simu (section « UWB ») |
 | Étapes avec validation de l'opérateur | #29 | remplace les missions de `droneload_vol` |
 
 ## Migration depuis le code 2026

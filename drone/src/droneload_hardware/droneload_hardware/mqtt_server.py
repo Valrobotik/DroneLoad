@@ -23,6 +23,7 @@ from pathlib import Path
 import paho.mqtt.client as mqtt
 import psutil
 import rclpy
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandLong
 from rcl_interfaces.msg import Log
@@ -36,7 +37,7 @@ ESP_TIMEOUT = 4.0     # s sans ping avant de considérer l'ESP32 déconnecté
 HEIGHT_MAX_AGE = 1.0  # s : au-delà, la hauteur lidar n'est plus affichée
 HOOK_MAX_AGE = 2.5    # s sans /hook/ready (publié chaque seconde) : nœud servo arrêté
 SYSTEM_DELAY = 0.5    # s laissées au message de partir vers le PC avant reboot, restart_script, shutdown
-FORWARDED_NODES = {'main_node', 'vision', 'aruco', 'gstream', 'camera', 'servo'}   # logs renvoyés au PC
+FORWARDED_NODES = {'main_node', 'vision', 'aruco', 'gstream', 'camera', 'servo', 'position_ext'}   # logs renvoyés au PC
 HOOK_STATES = {'hook_open': True, 'hook_close': False}
 BILAN_DELAY = 20.0    # s après le lancement : Pixhawk connectée, caméra ouverte, modèle chargé
 MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN = 246
@@ -95,6 +96,8 @@ class MqttServer(Node):
         # camera_info accompagne chaque image (camera sur la Pi, bridge en simu) : compte les images sans les recevoir
         self.create_subscription(CameraInfo, '/camera/camera_info', self._on_camera_info, qos_profile_sensor_data)
         self.create_subscription(Bool, '/hook/ready', self._on_hook_ready, 10)
+        # Mesures UWB (pilote du tag sur la Pi, service uwb en simu), transmises à la Pixhawk par position_ext
+        self.create_subscription(PoseWithCovarianceStamped, '/uwb/pose', self._on_uwb, qos_profile_sensor_data)
         self.create_subscription(Log, '/rosout', self._on_rosout, 100)
 
         self.current_mode = 'attente'
@@ -106,6 +109,7 @@ class MqttServer(Node):
         self.flight_time = 0.0        # durée du dernier vol terminé (s)
         self.frames = 0               # images traitées par la vision depuis la dernière télémétrie
         self.camera_frames = 0        # images de la caméra depuis la dernière télémétrie
+        self.uwb_mesures = 0          # mesures UWB depuis la dernière télémétrie
         self.hook_ready = None
         self.hook_ready_time = 0.0
         self.batt_v = -1
@@ -254,8 +258,9 @@ class MqttServer(Node):
         camera = f"caméra {t.get('cam_fps', 0)}/s" if t.get('cam_fps') else 'CAMÉRA MUETTE'
         vision = f"IA {t.get('fps', 0)}/s" if t.get('fps') else 'IA MUETTE'
         crochet = 'crochet OK' if t.get('hook_ready') else 'CROCHET HS'
+        uwb = f"UWB {t['uwb_hz']}/s" if t.get('uwb_hz') else 'UWB MUET'
         # Hors du thread de ROS : check.py prend quelques secondes
-        threading.Thread(target=lambda: self.log_to_pc(f'Démarrage : {camera}, {vision}, {crochet}, {check_install()}'),
+        threading.Thread(target=lambda: self.log_to_pc(f'Démarrage : {camera}, {vision}, {crochet}, {uwb}, {check_install()}'),
                          daemon=True).start()
 
     # --- ROS ---
@@ -288,6 +293,9 @@ class MqttServer(Node):
 
     def _on_camera_info(self, msg):
         self.camera_frames += 1
+
+    def _on_uwb(self, msg):
+        self.uwb_mesures += 1
 
     def _on_hook_ready(self, msg):
         self.hook_ready = msg.data
@@ -327,6 +335,7 @@ class MqttServer(Node):
         telemetry = {
             'fps': self.frames,
             'cam_fps': self.camera_frames,
+            'uwb_hz': self.uwb_mesures,         # mesures UWB par seconde (0 : UWB muet ou absent)
             'hook_ready': self.hook_ready and hook_alive,   # false : GPIO indisponible ou nœud servo arrêté
             'cpu_percent': psutil.cpu_percent(),
             'cpu_temp': cpu_temperature(),
@@ -346,6 +355,7 @@ class MqttServer(Node):
         self.telemetry = telemetry
         self.frames = 0
         self.camera_frames = 0
+        self.uwb_mesures = 0
         self.client.publish('drone/telemetry', json.dumps(telemetry))
         if self.bilan_at is not None and time.monotonic() >= self.bilan_at:
             self.bilan_at = None

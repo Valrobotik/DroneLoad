@@ -12,7 +12,7 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    description='Matériel et liaisons : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT (dashboard, ESP32)',
+    description='Matériel et liaisons : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT (dashboard, ESP32), position UWB vers la Pixhawk',
     license='TODO: License declaration',
     entry_points={
         'console_scripts': [
@@ -20,6 +20,7 @@ setup(
             'servo = droneload_hardware.servo:main',
             'gstream = droneload_hardware.gstream:main',
             'mqtt_server = droneload_hardware.mqtt_server:main',
+            'position_ext = droneload_hardware.position_ext:main',
         ],
     },
 )
