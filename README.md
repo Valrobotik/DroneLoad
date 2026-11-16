@@ -16,10 +16,11 @@ Références complètes, positions des capteurs et masse estimée : section « M
 
 ```
 drone/               code embarqué (Raspberry Pi) : workspace ROS 2, voir docs/architecture.md
-  droneload_bringup/ lancement (drone.launch.py) et paramètres (drone.yaml)
-  droneload_vol/     nœud principal, interface MAVROS, missions (décollage, atterrissage, épreuves)
-  droneload_vision/  détection YOLO (traitement d'image seulement)
-  droneload_hardware/ entrées/sorties : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT
+  src/               paquets ROS 2 :
+    droneload_bringup/  lancement (drone.launch.py) et paramètres (drone.yaml)
+    droneload_vol/      nœud principal, interface MAVROS, missions (décollage, atterrissage, épreuves)
+    droneload_vision/   détection YOLO (traitement d'image seulement)
+    droneload_hardware/ entrées/sorties : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT
 tools/               scripts autonomes (calibration caméra -> config/camera/)
 ground/              PC de pilotage : dashboard MQTT + lanceur (macOS, Linux, Windows)
   requirements.txt
