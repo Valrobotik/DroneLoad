@@ -1,7 +1,7 @@
 """API binaire TLV du firmware PANS (DWM1001) : requête dwm_loc_get et décodage de sa réponse.
 
 Fonctions pures (ni ROS ni port série) : utilisées par le nœud uwb et par le faux tag de
-sim/scripts/uwb_pilote_test.py. Format d'après le DWM1001 Firmware API Guide, À VÉRIFIER sur le vrai tag :
+tests/simu/uwb_pilote.py. Format d'après le DWM1001 Firmware API Guide, À VÉRIFIER sur le vrai tag :
 
   requête  : 0C 00                                    (dwm_loc_get, sans argument)
   réponse  : 40 01 <err>                              (code de retour, 0 = OK)

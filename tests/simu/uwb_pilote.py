@@ -15,7 +15,8 @@ sous PANS (encodage de uwb_tlv.py). Le nœud uwb est lancé par ros2 run, sur un
 
 Ne vérifie pas que le format TLV est le bon : à confirmer sur le vrai tag (docs/architecture.md, « UWB »).
 Prérequis : paquets du drone construits (service drone, ou colcon build dans companion).
-Usage : docker compose exec companion bash -lc '. drone/install/setup.bash && python3 sim/scripts/uwb_pilote_test.py'
+Lancement : python3 tests/run.py uwb_pilote. À la main :
+docker compose exec companion bash -lc '. drone/install/setup.bash && python3 tests/simu/uwb_pilote.py'
 Code de sortie 0 si tout est OK, 1 sinon.
 """
 import errno

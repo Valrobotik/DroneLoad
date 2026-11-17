@@ -30,8 +30,8 @@ def init_static_interface():
     print("                       PANNEAU DE CONTRÔLE DRONE                       ")
     print("=======================================================================")
     print(" [1] Mode ATTENTE      [2] Mode EPREUVE 1      [3] Mode EPREUVE 2")
-    print(" [4] DÉCOLLAGE         [5] ATTERRISSAGE")
-    print(" [O] OUVRIR CROCHET    [C] FERMER CROCHET")
+    print(" [4] DÉCOLLAGE   [5] ATTERRISSAGE   [6] DÉPLACEMENT")
+    print(" [O] OUVRIR CROCHET    [C] FERMER CROCHET    [G] Point visé (x,y)")
     print(" CIBLES IA : [F] Fleur  [V] Vache (cow)  [D] Chien (dog)  [M] Mouton")
     print(" [S] Restart Script    [R] Reboot Pi           [P] Reboot Pixhawk")
     print(" [X] Éteindre le Pi    [Q] Quitter le Dashboard")
@@ -72,7 +72,9 @@ def update_telemetry_ui():
     if t.get("undervoltage"):   # alimentation de la Pi trop faible
         cpu += " SOUS-TENSION"
 
-    line11 = f" MISSION: {mission:<16} | FCU: {fcu:<16} | H: {height:<6} | CROCHET: {crochet}"
+    # Position jugée fiable par main_node (UWB présent et sans saut) : les missions en dépendent
+    position = {True: "OK", False: "PERDUE"}.get(t.get("position_fiable"), "?")
+    line11 = f" MISSION: {mission:<16} | FCU: {fcu:<16} | H: {height:<6} | POS: {position:<6} | CROCHET: {crochet}"
     line12 = f" ESP32: {esp_status:<3} | CAM/IA: {cam}/{t.get('fps', 0)} FPS | CPU: {cpu} | RAM: {t.get('ram_percent', 0)}% | Batt: {batt_str}"
     
     print_at(11, 2, line11)
@@ -145,6 +147,17 @@ while True:
         client.publish("drone/cmd", json.dumps({"action": "set_mode", "mode": "takeoff"}))
     elif cmd == '5':
         client.publish("drone/cmd", json.dumps({"action": "set_mode", "mode": "land"}))
+    elif cmd == '6':
+        client.publish("drone/cmd", json.dumps({"action": "set_mode", "mode": "deplacement"}))
+    elif cmd == 'G':
+        # Point visé en m, repère de l'EKF : mission deplacement
+        print("\033[21;1H\033[K> Point visé x,y en m (repère de l'EKF, vide : annuler) ? ", end="", flush=True)
+        try:
+            x, y = (float(v) for v in input().replace(' ', '').split(','))
+            client.publish("drone/cmd", json.dumps({"action": "set_point", "x": x, "y": y}))
+        except ValueError:
+            pass
+        print("\033[21;1H\033[K> ", end="", flush=True)
     elif cmd == 'O':
         client.publish("drone/cmd", json.dumps({"action": "set_hook", "state": "hook_open"}))
     elif cmd == 'C':

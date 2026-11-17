@@ -8,6 +8,11 @@ main_node:
     takeoff_altitude: 1.0         # m au-dessus du sol (lidar)
     image_width: 640              # px, pour le centrage en épreuve 2
     ekf_origin: [45.7838, 4.8722, 170.0]   # origine EKF fictive (sans GPS, requise par GUIDED)
+    delai_source: 1.0             # s : position UWB envoyée à la Pixhawk plus vieille = position non fiable
+    delai_recalage: 3.0           # s après le retour de l'UWB avant de rejuger la position fiable (recalage de l'EKF)
+    delai_position: 30.0          # s de perte de position avant d'abandonner la mission (puis stationnaire, pilote)
+    vitesse_max: 0.5              # m/s, mission deplacement (modifiable en vol : ros2 param set /main_node vitesse_max)
+    precision: 0.1                # m, mission deplacement : point atteint
 
 camera:
   ros__parameters:
@@ -49,6 +54,7 @@ position_ext:
     vitesse_max: 3.0              # m/s : saut rejeté si la mesure s'écarte de plus de vitesse_max x temps écoulé + marge
     marge: 0.5                    # m : bruit de l'UWB entre deux mesures (0,10 m d'écart type par mesure)
     delai_reprise: 1.0            # s sans position transmise : la mesure suivante est reprise telle quelle
+    temps_max: 0.3                # s : plafond du temps écoulé dans le seuil (3 x 0,3 + 0,5 = 1,4 m au plus), sinon une série de sauts finit par passer
 
 mqtt_server:
   ros__parameters:

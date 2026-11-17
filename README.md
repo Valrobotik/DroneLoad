@@ -18,7 +18,8 @@ Références complètes, positions des capteurs et masse estimée : section « M
 drone/               code embarqué (Raspberry Pi) : workspace ROS 2, voir docs/architecture.md
   src/               paquets ROS 2 :
     droneload_bringup/  lancement (drone.launch.py) et paramètres (drone.yaml)
-    droneload_vol/      nœud principal, interface MAVROS, missions (décollage, atterrissage, épreuves)
+    droneload_vol/      nœud principal, interface MAVROS, missions (décollage, atterrissage, déplacement, épreuves)
+                        créer une mission : docs/architecture.md, « Ajouter une mission »
     droneload_vision/   détection YOLO (traitement d'image seulement)
     droneload_hardware/ entrées/sorties : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT
 tools/               scripts autonomes (calibration caméra -> config/camera/)
@@ -102,7 +103,7 @@ Sur le PC, depuis la racine du repo :
 ```bash
 .venv/bin/python ground/launch.py --broker <IP du Pi>    # Windows : .venv\Scripts\python
 ```
-Le script ouvre la fenêtre vidéo GStreamer (UDP 5000) et lance le dashboard dans le terminal. Sur macOS, `ground/dashboard.command` fait la même chose en double-clic.
+Le script ouvre la fenêtre vidéo GStreamer (UDP 5000) et lance le dashboard dans le terminal. Sur macOS, `ground/dashboard.command` fait la même chose en double-clic. Dans le dashboard, `[6]` lance la mission déplacement et `[G]` envoie le point visé (m, repère de la Pixhawk).
 
 Les réglages du drone (hauteur de décollage, résolution, ports, broker) sont dans `drone/src/droneload_bringup/config/drone.yaml`.
 
@@ -114,10 +115,10 @@ cd sim
 docker compose --profile drone up -d          # simu + code du drone
 ```
 
-Tests (dans `tests/`, hors du code du drone) : le lanceur prépare la simu pour chacun (code du drone ou non, remise au départ) et fait le bilan. Voir [docs/tests.md](docs/tests.md) (ce que vérifie chaque test, comment en écrire un).
+Tests (dans `tests/`, hors du code du drone) : le lanceur prépare la simu pour chacun (UWB ou non, code du drone ou non, remise au départ) et fait le bilan. Voir [docs/tests.md](docs/tests.md) (ce que vérifie chaque test, comment en écrire un).
 ```bash
 python3 tests/run.py --liste      # tests et suites
-python3 tests/run.py mission      # un test ; suites : base, tout
+python3 tests/run.py mission      # un test ; suites : base, avec_uwb, tout
 ```
 
 ## Protocole MQTT

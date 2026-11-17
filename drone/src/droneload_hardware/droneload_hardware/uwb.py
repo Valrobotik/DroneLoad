@@ -15,7 +15,7 @@ programme : elle ne dépend pas de l'état du tag, qui reste alimenté quand ce 
 - Tag laissé en mode shell (terminal ouvert à la main) : « quit » le ramène en mode TLV.
 
 En simulation, /uwb/pose vient du service uwb (sim/scripts/uwb_sim.py) : ce nœud n'est pas lancé.
-Non testé sur le vrai tag (testé contre un faux tag : sim/scripts/uwb_pilote_test.py).
+Non testé sur le vrai tag (testé contre un faux tag : tests/simu/uwb_pilote.py).
 """
 import fcntl
 import os

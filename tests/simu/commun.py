@@ -5,6 +5,7 @@ Lancés dans un conteneur de la simu (companion ou drone), par tests/run.py ou �
 Le dossier du script est dans sys.path : `from commun import ...` suffit. Écrire un test : docs/tests.md.
 """
 import json
+import os
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -16,6 +17,18 @@ REPO = Path(__file__).resolve().parents[2]
 SDF = REPO / 'sim' / 'worlds' / 'voliere.sdf'
 BROKER = ('127.0.0.1', 1883)
 TAKEOFF_ALT = 1.0   # = takeoff_altitude de drone.yaml
+# Config UWB attendue par tests/run.py (variable DRONELOAD_UWB : '1' avec, '0' sans) ; None : test lancé à la
+# main, il s'adapte à la config de la simu
+UWB_ATTENDU = {'1': True, '0': False}.get(os.environ.get('DRONELOAD_UWB', ''))
+
+
+def verifier_uwb(etape, avec_uwb):
+    """Échec si la simu n'a pas la config UWB attendue par le lanceur (sinon un test qui s'adapte passerait
+    en sautant ses étapes). Vrai si la config convient."""
+    if UWB_ATTENDU is None:
+        return True
+    return etape(f"simu {'avec' if UWB_ATTENDU else 'sans'} UWB, comme attendu par tests/run.py "
+                 f"(EKF : {'UWB' if avec_uwb else 'sans UWB'})", avec_uwb == UWB_ATTENDU)
 
 
 class Etapes:
@@ -76,6 +89,16 @@ def ros2(*args, timeout=30, essais=3):
     return False
 
 
+def set_uwb(actif):
+    """Capteur UWB simulé en marche ou en panne (paramètre actif du service uwb)."""
+    return ros2('param', 'set', '/uwb_sim', 'actif', 'true' if actif else 'false')
+
+
+def set_vitesse(v):
+    """Vitesse maximale de la mission deplacement (vitesse_max de main_node, modifiable en vol)."""
+    return ros2('param', 'set', '/main_node', 'vitesse_max', str(float(v)))
+
+
 class ClientMqtt:
     """Le drone vu du dashboard : télémétrie, logs ; commandes sur drone/cmd.
 
@@ -118,6 +141,9 @@ class ClientMqtt:
 
     def set_mode(self, mode):
         self.commande('set_mode', mode=mode)
+
+    def set_point(self, x, y):
+        self.commande('set_point', x=float(x), y=float(y))
 
     # --- Lecture ---
     @property

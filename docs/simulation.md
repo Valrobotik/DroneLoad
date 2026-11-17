@@ -38,13 +38,13 @@ docker compose restart drone                  # après une modification du code
 docker compose --profile drone down           # tout arrêter, y compris le drone
 ```
 
-Position UWB fusionnée dans l'EKF (surcouche `uwb.param`, vide par défaut comme sur le vrai drone sans UWB ; elle empêche l'armement sans UWB, donc `smoke_test.py` échoue avec elle) :
+Position UWB fusionnée dans l'EKF (surcouche `uwb.param`, vide par défaut comme sur le vrai drone sans UWB ; elle empêche l'armement sans UWB, donc le test `smoke` échoue avec elle ; le lanceur choisit la config de chaque test) :
 
 ```bash
 PARAM_UWB=uwb docker compose --profile drone up -d
-docker compose exec companion bash -lc 'python3 sim/scripts/uwb_test.py'      # stationnaire, sauts, pannes de 5 s et 30 s, jeu de sources 2 ; EKF comparé à la vérité Gazebo
-docker compose exec companion bash -lc '. drone/install/setup.bash && python3 sim/scripts/uwb_pilote_test.py'   # pilote du vrai tag contre un faux tag (sans Gazebo)
+python3 ../tests/run.py avec_uwb             # uwb, position, uwb_pilote
 ```
+Pour changer `PARAM_UWB`, tout arrêter (`docker compose --profile '*' down`) puis relancer : un `up -d` sur une simu qui tourne ne recrée que le SITL, et MAVROS comme le code du drone restent sur les paramètres de l'ancien (`EK3_SRC1_POSXY` : ils croiraient la simu sans UWB).
 Le dashboard se branche comme sur le vrai drone : `.venv/bin/python ground/launch.py --broker localhost`, avec le flux vidéo annoté.
 
 Ouvrir un shell ROS 2 dans la simu (l'environnement ROS 2 est chargé par le shell ; pour une commande isolée, passer par `bash -lc '...'`). Dans les conteneurs, le dossier courant est la racine du repo :

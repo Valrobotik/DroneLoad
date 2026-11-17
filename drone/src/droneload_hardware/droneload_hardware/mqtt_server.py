@@ -1,7 +1,9 @@
 """Liaison MQTT avec le dashboard du PC (ground/) et le robot sol ESP32.
 
-Même protocole que le code 2026, donc rien ne change côté ground/ :
-- drone/cmd (JSON {"action": ...}) : set_mode, set_class, set_hook, arm, disarm ;
+Protocole du code 2026 (l'ESP32 n'a rien à changer), complété pour ground/ (set_point,
+position_fiable dans la télémétrie) :
+- drone/cmd (JSON {"action": ...}) : set_mode, set_class, set_point (x, y en m, repère de l'EKF,
+  mission deplacement), set_hook, arm, disarm ;
 - drone/system : reboot, restart_script, shutdown, reboot_fcu (Pixhawk) (refusés drone armé) ;
 - robot/ping : heartbeat de l'ESP32 (déconnecté après 4 s sans ping) ;
 - publiés : drone/logs (texte) et drone/telemetry (JSON, toutes les secondes).
@@ -23,7 +25,7 @@ from pathlib import Path
 import paho.mqtt.client as mqtt
 import psutil
 import rclpy
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import Point, PoseWithCovarianceStamped
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandLong
 from rcl_interfaces.msg import Log
@@ -39,6 +41,7 @@ HOOK_MAX_AGE = 2.5    # s sans /hook/ready (publié chaque seconde) : nœud serv
 SYSTEM_DELAY = 0.5    # s laissées au message de partir vers le PC avant reboot, restart_script, shutdown
 FORWARDED_NODES = {'main_node', 'vision', 'aruco', 'gstream', 'camera', 'servo', 'position_ext', 'uwb'}   # logs renvoyés au PC
 HOOK_STATES = {'hook_open': True, 'hook_close': False}
+POSITION_MAX_AGE = 1.0   # s : au-delà, position_fiable n'est plus envoyée (null)
 BILAN_DELAY = 20.0    # s après le lancement : Pixhawk connectée, caméra ouverte, modèle chargé
 MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN = 246
 REPO = Path(__file__).resolve().parents[4]   # --symlink-install : drone/src/<paquet>/<paquet>/ -> racine du repo
@@ -84,6 +87,7 @@ class MqttServer(Node):
         latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self.mode_pub = self.create_publisher(String, '/mission/mode', latched)
         self.class_pub = self.create_publisher(String, '/mission/target_class', latched)
+        self.point_pub = self.create_publisher(Point, '/mission/target_point', latched)
         self.hook_pub = self.create_publisher(Bool, '/hook/cmd', 10)
         self.arming = self.create_client(CommandBool, '/mavros/cmd/arming')
         self.command = self.create_client(CommandLong, '/mavros/cmd/command')
@@ -99,6 +103,8 @@ class MqttServer(Node):
         # Mesures UWB (pilote du tag sur la Pi, service uwb en simu), transmises à la Pixhawk par position_ext
         self.create_subscription(PoseWithCovarianceStamped, '/uwb/pose', self._on_uwb, qos_profile_sensor_data)
         self.create_subscription(Log, '/rosout', self._on_rosout, 100)
+        # Position jugée fiable par main_node (télémétrie position_fiable)
+        self.create_subscription(Bool, '/position/fiable', self._on_position_fiable, 10)
 
         self.current_mode = 'attente'
         self.mission_state = None     # état réel publié par main_node (<mode>:<état>)
@@ -116,6 +122,8 @@ class MqttServer(Node):
         self.batt_pct = -1
         self.last_esp_ping = 0.0
         self.esp_connected = False
+        self.position_fiable = None
+        self.position_fiable_time = 0.0
 
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, 'Drone_Main')
         self.client.on_connect = self._on_connect
@@ -193,6 +201,13 @@ class MqttServer(Node):
                 return
             self.class_pub.publish(String(data=class_name))
             self.log_to_pc(f'Cible IA (YOLO) changée : {class_name}')
+        elif action == 'set_point':
+            x, y = data.get('x'), data.get('y')
+            if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (x, y)):
+                self.log_to_pc(f'Erreur : set_point sans x et y valides : {data}')
+                return
+            self.point_pub.publish(Point(x=float(x), y=float(y)))
+            self.log_to_pc(f'Point visé : ({x:.2f}, {y:.2f}) m')
         elif action == 'set_hook':
             state = data.get('state')
             if state not in HOOK_STATES:
@@ -297,6 +312,10 @@ class MqttServer(Node):
     def _on_uwb(self, msg):
         self.uwb_mesures += 1
 
+    def _on_position_fiable(self, msg):
+        self.position_fiable = msg.data
+        self.position_fiable_time = time.monotonic()
+
     def _on_hook_ready(self, msg):
         self.hook_ready = msg.data
         self.hook_ready_time = time.monotonic()
@@ -348,6 +367,8 @@ class MqttServer(Node):
             'fcu_mode': self.fcu.mode,
             'armed': self.fcu.armed,
             'height': round(self.height, 2) if fresh and self.height is not None else None,
+            # Position jugée fiable par main_node (null : main_node muet)
+            'position_fiable': self.position_fiable if time.monotonic() - self.position_fiable_time < POSITION_MAX_AGE else None,
             'batt_v': self.batt_v,
             'batt_pct': self.batt_pct,
             'esp_connected': self.esp_connected,
