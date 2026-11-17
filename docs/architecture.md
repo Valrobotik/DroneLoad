@@ -28,7 +28,9 @@ drone/                            # workspace colcon (build/, install/, log/ cr�
             ├── servo.py              # servo du crochet (GPIO 13)
             ├── gstream.py            # flux vidéo vers le PC
             ├── mqtt_server.py        # dashboard et ESP32 (MQTT)
-            └── position_ext.py       # position UWB -> Pixhawk (position externe)
+            ├── position_ext.py       # position UWB -> Pixhawk (position externe)
+            ├── uwb.py                # tag UWB DWM1001 en USB -> /uwb/pose
+            └── uwb_tlv.py            # API binaire TLV du firmware PANS (sans ROS)
 ```
 
 Chaque paquet contient aussi `package.xml` (dépendances ROS), `setup.py` (liste des nœuds exécutables) et `setup.cfg`. Les paquets sont dans `drone/src/` (disposition standard d'un workspace colcon) et le code se trouve dans `drone/src/<paquet>/<paquet>/`, car ament_python impose ce double niveau.
@@ -55,7 +57,7 @@ flowchart LR
     mavros[MAVROS]
   end
   px[Pixhawk]
-  uwb[tag UWB]
+  tag[tag UWB DWM1001]
 
   dash <--> broker
   esp <--> broker
@@ -69,7 +71,8 @@ flowchart LR
   vis -- /camera/annotated --> gst
   gst -- RTP/JPEG UDP 5000 --> vid
   main <-- /mavros/... --> mavros
-  uwb -- /uwb/pose --> pext
+  tag -- USB --> uwbn[uwb]
+  uwbn -- /uwb/pose --> pext
   pext -- /mavros/vision_pose/pose_cov --> mavros
   mavros <-- série 921600 --> px
 ```
@@ -89,7 +92,7 @@ flowchart LR
 | `/hook/ready` | `std_msgs/Bool`, chaque seconde : true si le crochet est utilisable (GPIO ouvert, ou mock) | `servo` | `mqtt_server` |
 | `/mavros/state`, `/mavros/rangefinder/rangefinder` | MAVROS | MAVROS | `main_node` |
 | `/mavros/battery` | `sensor_msgs/BatteryState` | MAVROS | `mqtt_server` |
-| `/uwb/pose` | `geometry_msgs/PoseWithCovarianceStamped` : position du tag UWB dans le repère des ancres, 10 Hz, orientation à l'identité (PANS ne donne pas de cap) | pilote série du tag (à venir), service `uwb` (simu, `sim/scripts/uwb_sim.py`) | `position_ext`, `mqtt_server` (`uwb_hz`) |
+| `/uwb/pose` | `geometry_msgs/PoseWithCovarianceStamped` : position du tag UWB dans le repère des ancres, 10 Hz, orientation à l'identité (PANS ne donne pas de cap) | `uwb` (Pi), service `uwb` (simu, `sim/scripts/uwb_sim.py`) | `position_ext`, `mqtt_server` (`uwb_hz`) |
 | `/mavros/vision_pose/pose_cov` | `geometry_msgs/PoseWithCovarianceStamped`, repère `map` (ENU) | `position_ext` | MAVROS → `VISION_POSITION_ESTIMATE` (EKF, `uwb.param`) |
 | `/sim/drone/pose` | `geometry_msgs/PoseStamped` : vérité terrain Gazebo (ENU), simu seulement, jamais lue par le code du drone | `bridge` | service `uwb`, `sim/scripts/uwb_test.py` |
 
@@ -181,6 +184,7 @@ Ce que lance chaque mode :
 | `servo` | GPIO | GPIO | mock (journal seulement) |
 | `main_node`, `vision`, `aruco`, `gstream`, `mqtt_server` | lancés | lancés | lancés |
 | `position_ext` | lancé | — | lancé (`/uwb/pose` vient du service `uwb`) |
+| `uwb` (tag UWB) | lancé | lancé | — (service `uwb` de la simu) |
 
 ## Ajouter un nœud
 
@@ -281,12 +285,15 @@ Système principal de position en intérieur (#17, #24) : 6 ancres DWM1001-DEV a
 | 1 | UWB (`EK3_SRC1_POSXY 6`, ExternalNav) | flux optique, en parallèle | lidar | normal |
 | 2 | aucune | flux optique | lidar | panne d'UWB |
 
-Chaîne : tag → `/uwb/pose` (repère des ancres) → `position_ext` → `/mavros/vision_pose/pose_cov` (repère `map`, ENU) → `VISION_POSITION_ESTIMATE` (`VISO_TYPE 1`). `position_ext` (réglages dans `drone.yaml`) :
+Pilote `uwb` : interroge le tag à 20 Hz par l'API binaire TLV de PANS (`dwm_loc_get`, décodée par `uwb_tlv.py`), recommandée par Qorvo pour un programme : contrairement au shell texte (`lep`), elle ne dépend pas de l'état du tag, qui reste alimenté quand le nœud redémarre, et donne aussi les ancres utilisées. Port `/dev/uwb` (lien udev vers le J-Link SEGGER de la carte DEV, rôle `pi` ; `./install/apply.sh` installe aussi `python3-serial`). Un seul lecteur sur le port (deux lecteurs se partagent les octets : panne de 2026) : port non ouvert s'il l'est déjà par un autre programme (cherché dans `/proc`, programme nommé sur `drone/logs`), puis verrouillé par le noyau (`TIOCEXCL`) : toute autre ouverture échoue (« Device or resource busy »), sauf avec `sudo`. Positions de qualité < `qf_min` ou calculées avec moins de `ancres_min` ancres (4 : avec 3 ancres, deux positions sont possibles, symétriques par rapport à leur plan, et le mauvais choix change aussi x, y si les ancres sont à des hauteurs différentes ; 3 seulement si elles sont toutes à la même hauteur) ignorées ; tag absent, occupé ou muet 2 s : signalé sur `drone/logs` et port rouvert ; tag laissé en mode shell : ramené en mode TLV (`quit`). **Non testé sur le vrai tag** : format TLV d'après la documentation de Qorvo, vérifié contre un faux tag (`sim/scripts/uwb_pilote_test.py`) ; l'interrogation ajoute en moyenne 25 ms de retard (à compter dans `VISO_DELAY_MS`).
+
+Chaîne : tag → `uwb` → `/uwb/pose` (repère des ancres) → `position_ext` → `/mavros/vision_pose/pose_cov` (repère `map`, ENU) → `VISION_POSITION_ESTIMATE` (`VISO_TYPE 1`). `position_ext` (réglages dans `drone.yaml`) :
 - tourne et décale la position : `cap_ancres` = angle de l'axe x des ancres par rapport à l'est, à mesurer sur le terrain. Le cap de l'EKF vient du compas : un repère des ancres mal orienté contredirait la vitesse du flux optique (spirales en stationnaire). En simu, Gazebo est déjà en ENU (0) ;
 - ne transmet que les mesures de moins de `age_max` (0,3 s) : ArduPilot ne lit pas l'horodatage et suppose un retard fixe (`VISO_DELAY_MS`) ;
+- rejette les sauts (ancre masquée, reflet) : une mesure plus loin de la dernière position transmise que `vitesse_max` (3 m/s) × temps écoulé + `marge` (0,5 m, bruit de l'UWB) n'est pas transmise ; après `delai_reprise` (1 s) sans position transmise, la mesure suivante est reprise telle quelle (sinon un vrai déplacement pendant une panne bloquerait l'UWB) ;
 - signale sur `drone/logs` la perte de l'UWB (1 s sans mesure) et son retour.
 
-À régler sur le vrai drone : `VISO_POS_X/Y/Z` (position du tag), `VISO_DELAY_MS` (retard de PANS), `VISO_POS_M_NSE` (poids de l'UWB face au flux optique). Vérifié en simu (`PARAM_UWB=uwb`, `sim/scripts/uwb_test.py`) : stationnaire, panne de 5 s, bascule sur le jeu 2, drone tourné de 90° au départ (l'orientation à l'identité envoyée ne fait pas tourner la position).
+À régler sur le vrai drone : `VISO_POS_X/Y/Z` (position du tag), `VISO_DELAY_MS` (retard de PANS), `VISO_POS_M_NSE` (poids de l'UWB face au flux optique). Vérifié en simu (`PARAM_UWB=uwb`, `sim/scripts/uwb_test.py`) : stationnaire, 30 % de sauts de 2 m rejetés, panne de 5 s, panne de 30 s (observée : toujours en GUIDED à 1,1 m, dérive 0,07 m au plus, aucun message de la Pixhawk, recalage au retour ; optimiste, le flux optique simulé étant presque parfait), bascule sur le jeu 2, drone tourné de 90° au départ (l'orientation à l'identité envoyée ne fait pas tourner la position).
 
 Secours le jour de la finale, sans changer le code : finale en extérieur → `pixhawk.param` seul (GPS) ; Marvelmind fourni par l'organisation, branché sur l'UART du port GPS1 à la place du GPS du M8N (compas gardé en I2C : câble séparateur) → configuration selon son protocole de sortie, encore à demander (NMEA : vu comme un GPS ; protocole balise : `BCN_TYPE 2`, `EK3_SRC1_POSXY 4`). Les missions lisent la position de l'EKF, jamais une source précise.
 
@@ -309,7 +316,7 @@ Secours le jour de la finale, sans changer le code : finale en extérieur → `p
 | Compensation de l'inclinaison de la caméra | #69 | positions des détections corrigées avec l'attitude (`/mavros/imu/data`), repère horizontal (tf2) |
 | AI HAT (Hailo) | #27 | backend `hailo` de `vision.py` (paramètre `backend`) |
 | Caméra de profondeur | #28, #34 | `realsense2_camera` sur `/stereo/...`, puis remplacer `DISTANCE_AVANT` de l'épreuve 2 |
-| UWB | #17, #24 | pilote série du tag DWM1001 (PANS, commande `lep`) qui publie `/uwb/pose` ; le reste de la chaîne est prêt et testé en simu (section « UWB ») |
+| UWB | #17, #24 | chaîne complète écrite (section « UWB ») ; à valider avec les vraies cartes : format TLV, `/dev/uwb`, réglages `VISO_*` et `cap_ancres` |
 | Étapes avec validation de l'opérateur | #29 | remplace les missions de `droneload_vol` |
 
 ## Migration depuis le code 2026

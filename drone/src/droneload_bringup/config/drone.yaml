@@ -30,12 +30,25 @@ gstream:
     port: 5000                    # UDP, reçu par ground/launch.py
     fps: 15
 
+uwb:
+  ros__parameters:
+    port: /dev/uwb                # lien udev vers le J-Link du DWM1001-DEV (install/, rôle pi)
+    debit: 115200
+    periode: 0.05                 # s entre deux requêtes dwm_loc_get (le tag calcule à 10 Hz)
+    qf_min: 50                    # qualité minimale de la position (0-100) : en dessous, ignorée
+    ancres_min: 4                 # ancres utilisées au minimum : avec 3, deux positions possibles (3 seulement si toutes à la même hauteur)
+    bruit_xy: 0.10                # m, écart type annoncé dans la covariance
+    bruit_z: 0.30
+
 position_ext:
   ros__parameters:
     cap_ancres: 0.0               # degrés : axe x des ancres UWB par rapport à l'est (sens trigo) ; 0 en simu (Gazebo en ENU)
     origine: [0.0, 0.0, 0.0]      # m, ajoutée après rotation (repère map de MAVROS)
     age_max: 0.3                  # s : mesure UWB plus vieille jetée (ArduPilot suppose un retard fixe, VISO_DELAY_MS)
     delai_perte: 1.0              # s sans mesure avant de signaler l'UWB perdu
+    vitesse_max: 3.0              # m/s : saut rejeté si la mesure s'écarte de plus de vitesse_max x temps écoulé + marge
+    marge: 0.5                    # m : bruit de l'UWB entre deux mesures (0,10 m d'écart type par mesure)
+    delai_reprise: 1.0            # s sans position transmise : la mesure suivante est reprise telle quelle
 
 mqtt_server:
   ros__parameters:

@@ -3,10 +3,15 @@
 Compare la position de l'EKF (/mavros/local_position/pose) à la vérité terrain de Gazebo (/sim/drone/pose,
 même repère ENU que l'UWB simulé) :
 1. décollage, stationnaire 20 s : le drone ne dérive pas et l'EKF suit la vérité (avec l'UWB : sans décalage) ;
-2. panne d'UWB de 5 s (service uwb, paramètre actif) : le drone reste en vol au flux optique, puis l'EKF
+2. sauts : 30 % des mesures UWB décalées de 2 m pendant 10 s (service uwb, paramètre taux_sauts) : rejetés
+   par position_ext (message sur drone/logs), le drone ne bouge pas ;
+3. panne d'UWB de 5 s (service uwb, paramètre actif) : le drone reste en vol au flux optique, puis l'EKF
    se recale sur l'UWB à son retour ;
-3. jeu de sources 2 de l'EKF (comme le switch RC9 : flux optique + lidar), stationnaire 10 s, retour au jeu 1 ;
-4. atterrissage.
+4. panne d'UWB de 30 s : OBSERVATION, sans critère (état affiché toutes les 5 s, messages de la Pixhawk) ;
+   recalage vérifié si le drone vole encore, sinon les étapes suivantes sont sautées. Le flux optique
+   simulé est presque parfait : la dérive en simu est optimiste par rapport au vol réel ;
+5. jeu de sources 2 de l'EKF (comme le switch RC9 : flux optique + lidar), stationnaire 10 s, retour au jeu 1 ;
+6. atterrissage.
 Sans uwb.param (PARAM_UWB= : EKF au flux optique seul, pour comparer) : étape 1 seulement.
 
 Orientation : position_ext envoie une orientation à l'identité (PANS ne donne pas de cap). Pour vérifier
@@ -26,7 +31,7 @@ import time
 import paho.mqtt.client as mqtt
 import rclpy
 from geometry_msgs.msg import PoseStamped
-from mavros_msgs.msg import State
+from mavros_msgs.msg import State, StatusText
 from mavros_msgs.srv import CommandLong, MessageInterval
 from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.srv import GetParameters, SetParameters
@@ -40,6 +45,9 @@ TAKEOFF_ALT = 1.0       # = takeoff_altitude de drone.yaml
 ALT_TOLERANCE = 0.2     # m
 HOVER_TIME = 20.0       # s
 PANNE_TIME = 5.0        # s
+PANNE_LONGUE = 30.0     # s
+SAUTS_TIME = 10.0       # s
+TAUX_SAUTS = 0.3        # proportion de mesures UWB décalées pendant l'étape des sauts
 SRC2_TIME = 10.0        # s
 DERIVE_MAX = 0.3        # m : déplacement réel maximal en stationnaire
 DERIVE_PANNE_MAX = 0.5  # m : pendant la panne d'UWB (flux optique seul)
@@ -62,11 +70,15 @@ class UwbTest(Node):
         self.ekf_time = 0.0
         self.verite = None
         self.telemetry = None
+        self.logs = []               # messages reçus sur drone/logs
         self.create_subscription(State, '/mavros/state', lambda m: setattr(self, 'state', m), 10)
         self.create_subscription(Range, '/mavros/rangefinder/rangefinder', self._on_range, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, '/mavros/local_position/pose', self._on_ekf, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, '/sim/drone/pose', lambda m: setattr(self, 'verite', m.pose),
                                  qos_profile_sensor_data)
+        # Messages de la Pixhawk (failsafe EKF, changement de source...)
+        self.create_subscription(StatusText, '/mavros/statustext/recv',
+                                 lambda m: print(f'    Pixhawk : {m.text}', flush=True), qos_profile_sensor_data)
         self.interval = self.create_client(MessageInterval, '/mavros/set_message_interval')
         self.command = self.create_client(CommandLong, '/mavros/cmd/command')
         self.uwb_params = self.create_client(SetParameters, '/uwb_sim/set_parameters')
@@ -91,7 +103,8 @@ class UwbTest(Node):
         if msg.topic == 'drone/telemetry':
             self.telemetry = json.loads(msg.payload)
         else:
-            print(f'    log : {msg.payload.decode()}', flush=True)
+            self.logs.append(msg.payload.decode())
+            print(f'    log : {self.logs[-1]}', flush=True)
 
     def spin(self):
         rclpy.spin_once(self, timeout_sec=0.05)
@@ -126,10 +139,31 @@ class UwbTest(Node):
             return None
         return reponse.values[0].integer_value
 
-    def set_uwb(self, actif):
+    def set_uwb_sim(self, nom, valeur):
+        """Règle un paramètre du capteur UWB simulé (actif, taux_sauts)."""
         reponse = self.call(self.uwb_params, SetParameters.Request(
-            parameters=[Parameter('actif', value=actif).to_parameter_msg()]))
+            parameters=[Parameter(nom, value=valeur).to_parameter_msg()]))
         return reponse is not None and reponse.results[0].successful
+
+    def set_uwb(self, actif):
+        return self.set_uwb_sim('actif', actif)
+
+    def panne_longue(self, duree):
+        """Observe le drone sans UWB pendant duree, sans critère ; vrai s'il vole encore à la bonne hauteur."""
+        depart = xy(self.verite) if self.verite else (0.0, 0.0)
+        start = time.monotonic()
+        prochain = start
+        while time.monotonic() - start < duree:
+            self.spin()
+            if time.monotonic() >= prochain:
+                prochain += 5.0
+                vx, vy = xy(self.verite)
+                ex, ey = xy(self.ekf)
+                hauteur = f'{self.height:.2f} m' if self.height is not None else '?'
+                print(f'    t = {time.monotonic() - start:4.1f} s : armé {self.state.armed}, mode {self.state.mode}, '
+                      f'hauteur {hauteur}, dérive réelle {math.hypot(vx - depart[0], vy - depart[1]):.2f} m, '
+                      f'écart EKF - vérité {math.hypot(ex - vx, ey - vy):.2f} m', flush=True)
+        return self.state.armed and self.at_alt()
 
     def source_set(self, jeu):
         reponse = self.call(self.command, CommandLong.Request(command=MAV_CMD_SET_EKF_SOURCE_SET, param1=float(jeu)))
@@ -218,6 +252,17 @@ def main():
                 step(f'EKF dans le repère de l\'UWB (décalage < {DECALAGE_MAX} m)', s['decalage'] < DECALAGE_MAX)
 
         if avec_uwb and ok:
+            if step('sauts UWB simulés', node.set_uwb_sim('taux_sauts', TAUX_SAUTS)):
+                debut_logs = len(node.logs)
+                ok, s = node.observer(SAUTS_TIME)
+                if step(f'{100 * TAUX_SAUTS:.0f} % de sauts de 2 m pendant {SAUTS_TIME:.0f} s : toujours en vol', ok):
+                    step(f'dérive réelle < {DERIVE_MAX} m', s['derive'] < DERIVE_MAX)
+                    step(f'EKF non tiré par les sauts (décalage < {DECALAGE_MAX} m)', s['decalage'] < DECALAGE_MAX)
+                step('sauts rejetés par position_ext (drone/logs)',
+                     any('Saut UWB rejeté' in log for log in node.logs[debut_logs:]))
+                step('sauts arrêtés', node.set_uwb_sim('taux_sauts', 0.0))
+
+        if avec_uwb and ok:
             if step('panne d\'UWB déclenchée', node.set_uwb(False)):
                 ok, s = node.observer(PANNE_TIME)
                 step(f'panne d\'UWB {PANNE_TIME:.0f} s : toujours en vol', ok)
@@ -228,6 +273,21 @@ def main():
                 ok, s = node.observer(3.0)
                 step('EKF recalé sur l\'UWB après la panne', ok and s['decalage'] < DECALAGE_MAX)
 
+        if avec_uwb and ok:
+            print(f'    panne d\'UWB de {PANNE_LONGUE:.0f} s : observation (pas de critère)', flush=True)
+            if step('panne longue déclenchée', node.set_uwb(False)):
+                en_vol = node.panne_longue(PANNE_LONGUE)
+                step('UWB rétabli', node.set_uwb(True))
+                if en_vol:
+                    node.wait_for(lambda: False, 5.0)
+                    ok, s = node.observer(3.0)
+                    step('EKF recalé sur l\'UWB après la panne longue', ok and s['decalage'] < DECALAGE_MAX)
+                else:
+                    ok = False
+                    print('    ArduPilot a interrompu le vol pendant la panne longue : étapes suivantes sautées',
+                          flush=True)
+
+        if avec_uwb and ok:
             if step('bascule sur le jeu de sources 2 (flux optique + lidar)', node.source_set(2)):
                 ok, s = node.observer(SRC2_TIME)
                 if step(f'stationnaire {SRC2_TIME:.0f} s sur le jeu 2', ok):
@@ -241,7 +301,8 @@ def main():
         step('atterrissage et désarmement', node.wait_for(lambda: not node.state.armed, 60))
         node.set_mode('attente')
     finally:
-        node.set_uwb(True)   # ne pas laisser l'UWB simulé en panne
+        node.set_uwb(True)   # ne pas laisser l'UWB simulé en panne ni décalé
+        node.set_uwb_sim('taux_sauts', 0.0)
         node.mqtt.loop_stop()
         node.destroy_node()
         rclpy.shutdown()

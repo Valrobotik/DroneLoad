@@ -116,13 +116,15 @@
     system: true
   when: boot_pi.stat.exists
 
-- name: Droits sur les GPIO (crochet) et la mémoire d'images de libcamera (dma_heap)
+- name: Droits sur les GPIO (crochet), la mémoire d'images de libcamera (dma_heap) et le tag UWB (/dev/uwb)
   ansible.builtin.copy:
     dest: /etc/udev/rules.d/99-droneload.rules
     content: |
       # DroneLoad (install/roles/pi) : sans ces règles, ces périphériques sont réservés à root sous Ubuntu
       SUBSYSTEM=="gpio", KERNEL=="gpiochip*", GROUP="gpio", MODE="0660"
       SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660"
+      # Tag UWB DWM1001-DEV (J-Link SEGGER en USB) : /dev/uwb, lu par le nœud uwb
+      SUBSYSTEM=="tty", ATTRS{idVendor}=="1366", SYMLINK+="uwb", GROUP="dialout", MODE="0660"
       # Wifi sans économie d'énergie : sinon latence de plusieurs centaines de ms sur MQTT et la vidéo
       ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlan*", RUN+="/usr/sbin/iw dev %k set power_save off"
     mode: "0644"

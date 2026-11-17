@@ -5,5 +5,5 @@
   when: systemd_actif.stat.exists | default(false)
 
 - name: Recharger udev
-  ansible.builtin.shell: udevadm control --reload && udevadm trigger --subsystem-match=gpio --subsystem-match=dma_heap
+  ansible.builtin.shell: udevadm control --reload && udevadm trigger --subsystem-match=gpio --subsystem-match=dma_heap --subsystem-match=tty
   when: systemd_actif.stat.exists | default(false)

@@ -21,6 +21,7 @@ setup(
             'gstream = droneload_hardware.gstream:main',
             'mqtt_server = droneload_hardware.mqtt_server:main',
             'position_ext = droneload_hardware.position_ext:main',
+            'uwb = droneload_hardware.uwb:main',
         ],
     },
 )

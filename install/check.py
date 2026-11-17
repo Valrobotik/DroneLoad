@@ -35,7 +35,7 @@ PIP_PROCEDURE = {"torch", "torchvision"}   # version CPU, installée à part par
 BOOT = Path("/boot/firmware")              # carte de démarrage de la Pi (absente ailleurs)
 PORT_PIXHAWK = Path("/dev/ttyAMA0")
 REGLES_UDEV = Path("/etc/udev/rules.d/99-droneload.rules")
-GROUPES = {"dialout": "port de la Pixhawk", "video": "caméra", "gpio": "GPIO du crochet"}
+GROUPES = {"dialout": "port de la Pixhawk et tag UWB", "video": "caméra", "gpio": "GPIO du crochet"}
 LOGIND = Path("/etc/systemd/logind.conf.d/droneload.conf")
 NETPLAN_ETH0 = Path("/etc/netplan/60-droneload-eth0.yaml")
 # Services masqués par le rôle pi : login sur le port de la Pixhawk, sonde des ports série, firmware

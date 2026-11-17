@@ -84,6 +84,8 @@ def nodes(context):
     ]
     if not sim:
         actions.append(node('droneload_hardware', 'camera', calibration_file=str(CALIBRATION)))
+        # Tag UWB (USB) ; en simu, /uwb/pose vient du service uwb
+        actions.append(node('droneload_hardware', 'uwb'))
     if not vision_only:
         # Position UWB -> Pixhawk (MAVROS) ; /uwb/pose vient du service uwb en simu
         actions.append(node('droneload_hardware', 'position_ext'))

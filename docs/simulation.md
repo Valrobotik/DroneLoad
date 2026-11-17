@@ -42,7 +42,8 @@ Position UWB fusionnée dans l'EKF (surcouche `uwb.param`, vide par défaut comm
 
 ```bash
 PARAM_UWB=uwb docker compose --profile drone up -d
-docker compose exec companion bash -lc 'python3 sim/scripts/uwb_test.py'      # stationnaire, panne d'UWB, jeu de sources 2 ; EKF comparé à la vérité Gazebo
+docker compose exec companion bash -lc 'python3 sim/scripts/uwb_test.py'      # stationnaire, sauts, pannes de 5 s et 30 s, jeu de sources 2 ; EKF comparé à la vérité Gazebo
+docker compose exec companion bash -lc '. drone/install/setup.bash && python3 sim/scripts/uwb_pilote_test.py'   # pilote du vrai tag contre un faux tag (sans Gazebo)
 ```
 Le dashboard se branche comme sur le vrai drone : `.venv/bin/python ground/launch.py --broker localhost`, avec le flux vidéo annoté.
 
@@ -65,7 +66,7 @@ Les tests (de bout en bout dans la simu) et leur lanceur sont décrits dans [tes
 | `sitl` | ArduCopter ; paramètres `config/ardupilot/*.parm`, rechargés à chaque démarrage |
 | `mavros` | MAVLink ↔ ROS 2 (`/mavros/...`), avec le même `mavros.launch.py` que sur le drone |
 | `bridge` | capteurs Gazebo → ROS 2 (`sim/bridge.yaml`) |
-| `uwb` | UWB simulé (`sim/scripts/uwb_sim.py`) : vérité terrain Gazebo (`/sim/drone/pose`) dégradée comme un tag DWM1001 (10 Hz, bruit 0,10 m, pertes) → `/uwb/pose` ; panne : `ros2 param set /uwb_sim actif false` |
+| `uwb` | UWB simulé (`sim/scripts/uwb_sim.py`) : vérité terrain Gazebo (`/sim/drone/pose`) dégradée comme un tag DWM1001 (10 Hz, bruit 0,10 m, pertes) → `/uwb/pose` ; panne : `ros2 param set /uwb_sim actif false` ; sauts (mesures décalées de 2 m) : `ros2 param set /uwb_sim taux_sauts 0.3` |
 | `companion` | conteneur de développement (tests, `ros2 topic ...`) |
 | `drone` | profil `drone` : code du drone (`drone.launch.py sim:=true`), relancé après `restart_script` |
 | `mqtt` | broker MQTT, même rôle que le mosquitto de la Pi |

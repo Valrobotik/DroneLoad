@@ -12,6 +12,8 @@ Repère : monde Gazebo (ENU, origine au centre de la volière). En réel, ce ser
 le nœud position_ext du drone le ramène dans le repère map de MAVROS.
 
 Panne simulée : ros2 param set /uwb_sim actif false (puis true pour la fin de la panne).
+Sauts simulés (ancre masquée, reflet) : ros2 param set /uwb_sim taux_sauts 0.3 (proportion de mesures
+décalées de SAUT m en x ; 0 pour arrêter).
 """
 import collections
 import random
@@ -28,13 +30,16 @@ BRUIT_XY = 0.10      # m, écart type
 BRUIT_Z = 0.30       # m
 RETARD = 0.05        # s
 PERTES = 0.02        # proportion de mesures perdues
+SAUT = 2.0           # m, décalage d'une mesure fausse (paramètre taux_sauts)
 
 
 class UwbSim(Node):
     def __init__(self):
         super().__init__('uwb_sim', parameter_overrides=[Parameter('use_sim_time', value=True)])
         self.declare_parameter('actif', True)
+        self.declare_parameter('taux_sauts', 0.0)
         self.actif = True
+        self.taux_sauts = 0.0
         self.add_on_set_parameters_callback(self._on_params)
         self.verite = None
         self.file = collections.deque()   # mesures en attente de leur retard : (heure de publication, message)
@@ -49,6 +54,9 @@ class UwbSim(Node):
             if p.name == 'actif':
                 self.actif = bool(p.value)
                 self.get_logger().warn('UWB simulé ' + ('rétabli' if self.actif else 'EN PANNE'))
+            elif p.name == 'taux_sauts':
+                self.taux_sauts = float(p.value)
+                self.get_logger().warn(f'UWB simulé : {100 * self.taux_sauts:.0f} % de mesures décalées de {SAUT} m')
         return SetParametersResult(successful=True)
 
     def _on_verite(self, msg):
@@ -62,7 +70,8 @@ class UwbSim(Node):
         msg.header.stamp = maintenant.to_msg()
         msg.header.frame_id = 'uwb'
         p = self.verite.pose.position
-        msg.pose.pose.position.x = p.x + random.gauss(0.0, BRUIT_XY)
+        saut = SAUT if random.random() < self.taux_sauts else 0.0
+        msg.pose.pose.position.x = p.x + saut + random.gauss(0.0, BRUIT_XY)
         msg.pose.pose.position.y = p.y + random.gauss(0.0, BRUIT_XY)
         msg.pose.pose.position.z = p.z + random.gauss(0.0, BRUIT_Z)
         msg.pose.pose.orientation.w = 1.0

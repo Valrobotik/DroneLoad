@@ -15,6 +15,7 @@ commun:
     - ros-dev-tools
     - python3-opencv          # compilé avec GStreamer : ne jamais ajouter opencv-python dans pip
     - python3-psutil          # télémétrie CPU/RAM
+    - python3-serial          # tag UWB DWM1001 (nœud uwb, port USB)
     - gstreamer1.0-tools
     - gstreamer1.0-plugins-good   # jpegenc, rtpjpegpay, udpsink : flux vidéo vers le PC
   pip:                        # torch (version CPU) est installé à part par le rôle common
