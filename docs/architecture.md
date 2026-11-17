@@ -17,7 +17,10 @@ drone/                            # workspace colcon (build/, install/, log/ cr�
     │   └── droneload_vol/
     │       ├── main_node.py          # nœud principal : modes, appel des missions
     │       ├── mavros.py             # MavrosDrone : commandes et état de l'autopilote, sans bloquer
-    │       └── missions/             # décollage, atterrissage, déplacement, épreuve 1, épreuve 2
+    │       ├── carte.py              # nœud carte : registre des points enregistrés par les missions, sauvegarde
+    │       ├── carte_client.py       # accès des missions à la carte, ce que voit la caméra dans le repère map
+    │       ├── reperes.py            # changements de repère (caméra -> map, fenêtre par ses ArUco), sans ROS
+    │       └── missions/             # décollage, atterrissage, déplacement, relevé, épreuve 1, épreuve 2
     ├── droneload_vision/             # traitement d'image seulement (aucun matériel, testable partout)
     │   └── droneload_vision/
     │       ├── vision.py             # détection YOLO
@@ -42,6 +45,7 @@ flowchart LR
   subgraph PC[PC de pilotage]
     dash[dashboard]
     vid[récepteur vidéo]
+    carteg[carte de la volière]
   end
   esp[ESP32 robot sol]
   broker((broker MQTT))
@@ -51,6 +55,7 @@ flowchart LR
     cam[camera]
     vis[vision]
     aru[aruco]
+    carte[carte]
     gst[gstream]
     servo[servo]
     pext[position_ext]
@@ -60,6 +65,7 @@ flowchart LR
   tag[tag UWB DWM1001]
 
   dash <--> broker
+  carteg <-- drone/position<br>drone/carte --> broker
   esp <--> broker
   broker <--> mqtt
   mqtt -- /mission/mode<br>/mission/target_class --> main
@@ -71,6 +77,11 @@ flowchart LR
   vis -- /camera/annotated --> gst
   gst -- RTP/JPEG UDP 5000 --> vid
   main <-- /mavros/... --> mavros
+  aru -- /aruco/detections --> main
+  main -- /carte/ajouter<br>/carte/repere --> carte
+  carte -- /carte/points --> main
+  carte -- /carte/points --> mqtt
+  mqtt -- /carte/reset<br>/carte/charger --> carte
   tag -- USB --> uwbn[uwb]
   uwbn -- /uwb/pose --> pext
   pext -- /mavros/vision_pose/pose_cov --> mavros
@@ -83,7 +94,7 @@ flowchart LR
 | `/camera/camera_info` | `sensor_msgs/CameraInfo` : calibration (`config/camera/module3_640x480.yaml` sur la Pi, caméra Gazebo de même focale en simu) | `camera` (Pi), `bridge` (simu) | `aruco` |
 | `/detections` | `vision_msgs/Detection2DArray` (`class_id` = nom de la classe) | `vision` | `main_node`, `mqtt_server` (FPS) |
 | `/camera/annotated` | `sensor_msgs/Image` | `vision` | `gstream` |
-| `/aruco/detections` | `vision_msgs/Detection3DArray` : un `Detection3D` par marqueur, `class_id` = identifiant, `results[0].pose.pose` = pose du marqueur en m dans le repère optique de la caméra (x à droite, y vers le bas, z dans l'axe : la distance au sol quand le drone est à plat) | `aruco` | (missions à venir, #15) |
+| `/aruco/detections` | `vision_msgs/Detection3DArray` : un `Detection3D` par marqueur, `class_id` = identifiant, `results[0].pose.pose` = pose du marqueur en m dans le repère optique de la caméra (x à droite, y vers le bas, z dans l'axe : la distance au sol quand le drone est à plat) | `aruco` | `main_node` (`carte_client.py`, missions) |
 | `/aruco/annotated` | `sensor_msgs/Image` : marqueurs, axes et position en cm (débogage, Foxglove) | `aruco` | — |
 | `/mission/mode` | `std_msgs/String` : `attente`, `takeoff`, `land`, `epreuve1`, `epreuve2` | `mqtt_server` | `main_node` |
 | `/mission/target_class` | `std_msgs/String` | `mqtt_server` | `main_node`, `vision` |
@@ -93,11 +104,15 @@ flowchart LR
 | `/hook/ready` | `std_msgs/Bool`, chaque seconde : true si le crochet est utilisable (GPIO ouvert, ou mock) | `servo` | `mqtt_server` |
 | `/mavros/state`, `/mavros/rangefinder/rangefinder` | MAVROS | MAVROS | `main_node` |
 | `/mavros/battery` | `sensor_msgs/BatteryState` | MAVROS | `mqtt_server` |
-| `/mavros/local_position/pose` | `geometry_msgs/PoseStamped` : position et attitude estimées par l'EKF, repère `map` (ENU ; origine au départ du drone sans UWB, repère des ancres avec), 10 Hz | MAVROS (LOCAL_POSITION_NED + ATTITUDE_QUATERNION, demandés par `MavrosDrone`) | `main_node` (position des missions) |
-| `/position/fiable` | `std_msgs/Bool`, à chaque tick (20 Hz) : position jugée fiable (`get_position()` non `None`, même critère que la pause des missions) | `main_node` | `mqtt_server` (`position_fiable`) |
+| `/mavros/local_position/pose` | `geometry_msgs/PoseStamped` : position et attitude estimées par l'EKF, repère `map` (ENU ; origine au départ du drone sans UWB, repère des ancres avec), 10 Hz | MAVROS (LOCAL_POSITION_NED + ATTITUDE_QUATERNION, demandés par `MavrosDrone`) | `main_node` (position des missions, carte), `mqtt_server` (`drone/position`) |
+| `/carte/points` | `visualization_msgs/MarkerArray`, repère `map`, chaque seconde et à chaque changement, *transient local* : un marqueur par point, `ns` = type (`aruco`, `robot`, `fenetre`, `obstacle`, `image`, `cible`...), `id` = numéro stable, `text` = JSON `{"nom", "vues", "age", "cap"}` (`age` : s depuis la dernière vue ; `cap` : le point a-t-il une orientation), orientation = cap (fenêtre : normale côté recto), `scale` = taille ; commence par un `DELETEALL` (affichable dans Foxglove) | `carte` | `main_node` (missions), `mqtt_server` (`drone/carte`) |
+| `/carte/ajouter` | `visualization_msgs/Marker` : une vue d'un point, `ns` = type, `text` = nom, pose = position (+ cap ; orientation nulle = sans cap) ; `DELETE` retire le point | `main_node` (`carte.ajouter`) | `carte` |
+| `/carte/repere` | `std_msgs/String`, *transient local* : repère de l'EKF (`uwb`, `gps`, `flux` ; source figée à l'armement, au sol celle d'`EK3_SRC1_POSXY`), gardé dans le fichier de la carte | `main_node` | `carte`, `mqtt_server` (`drone/position`) |
+| `/position/fiable` | `std_msgs/Bool`, à chaque tick (20 Hz) : position jugée fiable (`get_position()` non `None`, même critère que la pause des missions) | `main_node` | `carte` (refuse les points sinon), `mqtt_server` (`position_fiable`) |
+| `/carte/reset`, `/carte/charger` | `std_msgs/Empty` : vide la carte ; reprend la carte du lancement précédent | `mqtt_server` (`reset_carte`, `charger_carte`) | `carte` |
 | `/uwb/pose` | `geometry_msgs/PoseWithCovarianceStamped` : position du tag UWB dans le repère des ancres, 10 Hz, orientation à l'identité (PANS ne donne pas de cap) | `uwb` (Pi), service `uwb` (simu, `sim/scripts/uwb_sim.py`) | `position_ext`, `mqtt_server` (`uwb_hz`) |
 | `/mavros/vision_pose/pose_cov` | `geometry_msgs/PoseWithCovarianceStamped`, repère `map` (ENU) | `position_ext` | MAVROS → `VISION_POSITION_ESTIMATE` (EKF, `uwb.param`) |
-| `/sim/drone/pose` | `geometry_msgs/PoseStamped` : vérité terrain Gazebo (ENU), simu seulement, jamais utilisée pour voler | `bridge` | service `uwb`, `tests/simu/uwb.py` |
+| `/sim/drone/pose` | `geometry_msgs/PoseStamped` : vérité terrain Gazebo (ENU), simu seulement, jamais utilisée pour voler | `bridge` | service `uwb`, `tests/simu/uwb.py`, `mqtt_server` (relayée au PC pour l'affichage, `drone/position`) |
 
 `/mission/mode`, `/mission/target_class`, `/mission/target_point` et `/mission/state` sont en QoS *transient local* : un nœud qui (re)démarre reçoit la dernière valeur. Les images et les détections sont publiées en QoS capteur (*best effort*, file de 5). `vision` et `aruco` s'abonnent à `/camera/image_raw` avec une file d'une seule image (`LATEST_IMAGE`) : quand le traitement est plus lent que la caméra, ils reçoivent la plus récente et non la plus ancienne des images en attente (mesuré en simu avec les limites de la Pi : détections vieilles de 1,5 s avec la file de 5, 0,45 s avec la file de 1, soit le temps d'inférence).
 
@@ -129,30 +144,63 @@ Même règle pour la position : `get_position()` renvoie la position de l'EKF (x
 | `epreuve1` | `Epreuve1` (drone en stationnaire) : cible validée si seule la classe demandée est détectée sur ≥ 80 % des images en 2 s, puis le crochet s'ouvre ; `SANS_VISION` (signalé) si aucune image analysée sur une fenêtre de 2 s, retour en `RECHERCHE` quand les images reviennent | `RECHERCHE` → `TROUVEE` (ou `SANS_VISION`) |
 | `epreuve2` | `run_epreuve2` : se tourne vers la vache et avance tant qu'elle est centrée | `SUIVI` |
 | `deplacement` | `Deplacement` : va au point visé (`set_point`, repère de l'EKF) à hauteur constante, vitesse `min(vitesse_max, distance)` (0,5 m/s au plus), puis stationnaire ; `ECHEC` si la hauteur lidar est inconnue. Mission qui a besoin de la position (voir ci-dessous) | `SANS_POINT`, `EN_ROUTE` → `ARRIVE` (ou `ECHEC`, `POSITION_PERDUE`, `ABANDON`) |
+| `releve` | `Releve` : enregistre sur la carte tout ce que voit la caméra sol (section « Carte de la volière »), en stationnaire, ou vers un point envoyé par `set_point` pendant le relevé (point oublié à chaque entrée dans le mode). Besoin de la position | `STATIONNAIRE`, puis ceux de `deplacement` |
 
 Une mission ne bloque jamais : elle envoie une demande, puis vérifie le résultat aux ticks suivants. Elle réessaie toutes les secondes si la demande est refusée. À chaque demande de mode, même identique au mode en cours (relancer un `takeoff` en `ECHEC`), les missions sont remises à zéro et, sauf en `takeoff`, une vitesse nulle est envoyée tout de suite : sinon ArduPilot garderait la consigne de vitesse du mode précédent jusqu'à `GUID_TIMEOUT`. Une erreur dans une mission est journalisée et met le drone en stationnaire, sans arrêter le nœud.
 
-**Perte de position.** Une mission qui a besoin de la position (`besoin_position = True` : `deplacement`, et plus tard les missions 2027 qui visent la fenêtre, une zone ou le retour) n'est pas appelée tant que `get_position()` vaut `None` : le drone reste en stationnaire (la Pixhawk vole au flux optique) et l'état est `<mode>:POSITION_PERDUE`. Au retour de l'UWB, `get_position()` reste à `None` encore `delai_recalage` (3 s), le temps que l'EKF se recale : une mission ne repart pas sur une position encore fausse. Si la position revient dans les `delai_position` (30 s, temps de simulation en simu), la mission reprend où elle était. Au-delà : `<mode>:ABANDON`, le drone reste en stationnaire jusqu'à une nouvelle demande de mode (`land`, `attente`, ou la mission à relancer) ou jusqu'à la reprise en main par le pilote à la radio (exigée à tout moment par le règlement) ; la mission ne repart pas seule, même si la position revient. Les autres modes (`takeoff`, `land`, `attente`, `epreuve1`, `epreuve2`) n'utilisent pas la position. **Reprise en main par le pilote.** Si l'autopilote quitte GUIDED pendant une mission (pilote à la radio), `main_node` passe en `attente` (« Reprise en main par le pilote » sur `drone/logs`) ; revenu en GUIDED, le drone reste en stationnaire, la mission ne repart pas seule. Sauf en `takeoff` (qui passe lui-même en GUIDED) et `land` (mode LAND). Les consignes de vitesse (`send_velocity_local`, `send_velocity_body`, `hover`) ne partent que drone armé en GUIDED. Côté ArduPilot, rien ne change : `FS_EKF_ACTION 1` fait atterrir si l'EKF lui-même est perdu (plus de flux optique ni de lidar). Test : `tests/simu/position.py` (pannes, recalage, abandon, reprise en main). `vitesse_max` se change en vol (`ros2 param set /main_node vitesse_max 1.0`), pour la mission `deplacement`.
+**Perte de position.** Une mission qui a besoin de la position (`besoin_position = True` : `deplacement`, et plus tard les missions 2027 qui visent la fenêtre, une zone ou le retour) n'est pas appelée tant que `get_position()` vaut `None` : le drone reste en stationnaire (la Pixhawk vole au flux optique) et l'état est `<mode>:POSITION_PERDUE`. Au retour de l'UWB, `get_position()` reste à `None` encore `delai_recalage` (3 s), le temps que l'EKF se recale : une mission ne repart pas sur une position encore fausse, et la carte n'enregistre rien pendant ce temps (même critère, `/position/fiable`). Si la position revient dans les `delai_position` (30 s, temps de simulation en simu), la mission reprend où elle était. Au-delà : `<mode>:ABANDON`, le drone reste en stationnaire jusqu'à une nouvelle demande de mode (`land`, `attente`, ou la mission à relancer) ou jusqu'à la reprise en main par le pilote à la radio (exigée à tout moment par le règlement) ; la mission ne repart pas seule, même si la position revient. Les autres modes (`takeoff`, `land`, `attente`, `epreuve1`, `epreuve2`) n'utilisent pas la position. **Reprise en main par le pilote.** Si l'autopilote quitte GUIDED pendant une mission (pilote à la radio), `main_node` passe en `attente` (« Reprise en main par le pilote » sur `drone/logs`) ; revenu en GUIDED, le drone reste en stationnaire, la mission ne repart pas seule. Sauf en `takeoff` (qui passe lui-même en GUIDED) et `land` (mode LAND). Les consignes de vitesse (`send_velocity_local`, `send_velocity_body`, `hover`) ne partent que drone armé en GUIDED. Côté ArduPilot, rien ne change : `FS_EKF_ACTION 1` fait atterrir si l'EKF lui-même est perdu (plus de flux optique ni de lidar). Test : `tests/simu/position.py` (pannes, recalage, abandon, reprise en main). `vitesse_max` se change en vol (`ros2 param set /main_node vitesse_max 1.0`), pour les missions `deplacement` et `releve`.
 
 **Ajouter une mission.**
 1. Écrire la classe dans `droneload_vol/missions/` (exportée par `missions/__init__.py`) : `reset()`, `state` et `run(drone, now)`, qui ne bloque jamais.
 2. Si elle vise des positions : `besoin_position = True`. Dans `run`, `drone.get_position()` n'est alors jamais `None`, et la pause comme l'abandon sont automatiques.
-3. L'enregistrer en une ligne dans la table `self.missions` de `main_node` (mode → mission). Le mode, la remise à zéro et la publication de l'état en découlent.
+3. Si elle lit ou enregistre des points de la carte : recevoir `self.carte` de `main_node` au constructeur (comme `Releve(log, self.carte, ...)`), et `besoin_position = True` (un point enregistré sans position fiable serait faux).
+4. L'enregistrer en une ligne dans la table `self.missions` de `main_node` (mode → mission). Le mode, la remise à zéro et la publication de l'état en découlent.
+
+Exemple : aller à la fenêtre repérée, puis noter l'image cible vue en chemin.
+
+```python
+class VersFenetre:
+    besoin_position = True
+
+    def __init__(self, log, carte):
+        self.log, self.carte = log, carte
+        self.reset()
+
+    def reset(self):
+        self.state = 'RECHERCHE'
+
+    def run(self, drone, now):
+        fenetre = self.carte.get('fenetre')            # None tant qu'aucune mission ne l'a enregistrée
+        if fenetre is None:
+            drone.send_velocity_local(0, 0, 0)         # on ne devine pas : on attend (ou on cherche)
+            return
+        self.state = 'EN_ROUTE'
+        # ... vitesse vers (fenetre['x'], fenetre['y']), devant le recto : cap fenetre['cap'] (rad)
+        for image in self.carte.images_vues():         # ce que voit la caméra sol, repère de la carte
+            if image['classe'] == 'pomme':
+                self.carte.ajouter('cible', 'pomme', image['position'])
+```
+
+et dans `main_node` : `'vers_fenetre': VersFenetre(log, self.carte),` dans `self.missions`.
 
 Pour que la reprise après une pause fonctionne :
 - viser des points absolus du repère de l'EKF, calculés une fois et gardés dans la mission, et non des déplacements comptés en temps ;
 - prévoir que les délais propres à la mission continuent de courir pendant la pause.
 
+La carte suit le même critère : `main_node` le publie sur `/position/fiable`, et le nœud `carte` refuse tout point enregistré sans position fiable (section « Carte de la volière »). La mission `releve` a en plus `besoin_position`, pour se mettre en pause comme les autres.
+
 ## Protocole MQTT
 
-Celui de 2026, complété par `set_point` et `position_fiable` : l'ESP32 n'a rien à modifier.
+Celui de 2026, complété pour la carte de la volière (`drone/position`, `drone/carte`, `reset_carte`, `charger_carte`) : l'ESP32 n'a rien à modifier.
 
 | Topic | Sens | Contenu |
 |---|---|---|
-| `drone/cmd` | PC → drone | JSON `{"action": ...}` : `set_mode` (`mode`), `set_class` (`class_name`), `set_point` (`x`, `y` en m, repère de l'EKF : point de la mission `deplacement` ; pour les essais, le règlement compte un point donné par l'opérateur comme action manuelle), `set_hook` (`state` : `hook_open` / `hook_close`), `arm`, `disarm` |
+| `drone/cmd` | PC → drone | JSON `{"action": ...}` : `set_mode` (`mode`), `set_class` (`class_name`), `set_point` (`x`, `y` en m, repère de l'EKF : point de la mission `deplacement`, ou de `releve` s'il est envoyé pendant le relevé ; pour les essais, le règlement compte un point donné par l'opérateur comme action manuelle), `set_hook` (`state` : `hook_open` / `hook_close`), `arm`, `disarm`, `reset_carte` (vide la carte), `charger_carte` (reprend la carte du lancement précédent) |
 | `drone/system` | PC → drone | `reboot`, `restart_script`, `shutdown`, `reboot_fcu` (redémarre la Pixhawk : `MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN` par `/mavros/cmd/command`) ; refusés si le drone est armé |
 | `drone/logs` | drone → PC | texte : messages de `mqtt_server` et logs des autres nœuds |
 | `drone/telemetry` | drone → PC | JSON chaque seconde : `fps` (images analysées par la vision), `cam_fps` (images de la caméra, comptées sur `/camera/camera_info`), `hook_ready` (crochet utilisable ; `false` aussi si `servo` ne publie plus depuis 2,5 s, `null` si jamais reçu), `cpu_percent`, `cpu_temp` (°C ou `null`), `undervoltage` (alarme de sous-tension de la Pi 5, `null` ailleurs ; chaque passage est signalé sur `drone/logs` et compté dans le bilan de démarrage), `ram_percent`, `flight_time_sec` (temps armé du vol en cours, sinon du dernier vol ; « Vol terminé » sur `drone/logs` au désarmement), `mode` (dernier mode demandé), `mission` (état réel de `main_node`, ex. `takeoff:MONTEE`), `fcu_connected`, `fcu_mode`, `armed` (MAVROS), `position_fiable` (`/position/fiable`, `null` si `main_node` se tait ; colonne POS du dashboard), `height` (lidar en m, `null` sans mesure depuis 1 s), `batt_v`, `batt_pct`, `esp_connected`, `uwb_hz` (mesures `/uwb/pose` par seconde, 0 sans UWB) |
+| `drone/position` | drone → PC | JSON à 5 Hz : `ekf` (`x`, `y`, `z` en m et `cap` en degrés, 0 = axe x, sens trigo, repère `map` de `/mavros/local_position/pose`) et `verite` (même format, `/sim/drone/pose`, simu seulement), `repere` (`/carte/repere`, `null` tant qu'inconnu), chacun `null` sans donnée depuis 1 s |
+| `drone/carte` | drone → PC | JSON *retained* chaque seconde : liste des points de `/carte/points`, `{"type", "nom", "x", "y", "z", "cap", "vues", "age", "taille"}` (`cap` en degrés, `null` sans orientation ; `age` en s depuis la dernière vue ; `taille` : largeur, hauteur en m), repère `map` |
 | `robot/ping` | ESP32 → drone | heartbeat (déconnecté après 4 s sans ping) |
 
 **La commande `arm` arme réellement les moteurs.**
@@ -168,6 +216,31 @@ Pannes du matériel, toutes visibles sur le dashboard (concours 2026 : la Pi ne 
 - **port série de la Pixhawk** absent, inaccessible ou déjà ouvert : MAVROS n'est pas lancé, raison répétée toutes les 10 s sur `drone/logs` (`mavros.launch.py`) ;
 - **caméra** impossible à ouvrir (nappe, caméra prise) : `camera` reste lancé, le signale et réessaie toutes les 5 s ; plus d'image pendant 3 s : le nœud s'arrête et le launch le relance (la lecture GStreamer peut bloquer sans fin) ;
 - **crochet** : la puce GPIO est cherchée par son nom (`pinctrl-rp1`), pas par son numéro, qui change selon le noyau (une autre puce accepterait la broche 13 sans erreur). GPIO indisponible : `servo` le signale, réessaie toutes les 5 s, publie `/hook/ready` à false et refuse les commandes (pas d'ouverture différée, le drone aurait bougé).
+
+## Carte de la volière
+
+Les missions enregistrent et relisent des points (ArUco, robot, fenêtre, obstacles, images cibles...) dans le repère `map` de l'EKF. Le nœud `carte` (`droneload_vol`) n'est qu'un registre : il ne regarde aucune caméra, ce sont les missions qui décident quoi enregistrer.
+
+```
+/aruco/detections, /detections ─┐  main_node : self.carte (carte_client.py)      missions :
+/mavros/local_position/pose ────┴─► caméra -> map (reperes.py)            ─────► carte.get / liste / ajouter
+                                    /carte/ajouter ▼   ▲ /carte/points           carte.arucos_vus / images_vues
+                                               nœud carte ──► donnees/carte.json
+```
+
+- **Lire** : `self.carte.get('aruco', '0')` → `{'type', 'nom', 'x', 'y', 'z', 'cap', 'vues', 'age'}` ou `None` (point absent : la mission attend ou cherche, elle ne devine pas) ; `get('fenetre')` : premier point du type ; `liste('image')` : tous.
+- **Enregistrer** : `self.carte.ajouter(type, nom, (x, y, z), cap=None)`, une vue par appel. Types de `remplacer` (`robot` qui bouge, `cible` notée une fois par une mission) : dernière vue seule, publiés dès la 1re ; autres : moyenne, publiés à partir de `vues_min` (3) vues, vue à plus de `ecart_max` (0,5 m) de la moyenne rejetée après 6 vues. `retirer(type, nom)`.
+- **Ce que voit la caméra sol**, déjà dans le repère `map` : `arucos_vus()` (position, normale de la face imprimée), `images_vues()` (centre du cadre YOLO projeté au sol avec la hauteur lidar) ; `enregistrer_vus()` enregistre tout, une fois par image : ArUco de la fenêtre → `fenetre`, ArUco 1 → `robot`, autres → `aruco`, objets YOLO → `image` (nom = classe). C'est ce que fait la mission `releve` (stationnaire, ou vers un point envoyé par `set_point` pendant le relevé ; le point est oublié à chaque entrée dans le mode). Passage optique → drone : caméra vers le sol, **haut de l'image vers l'avant** (`camera_sol_rotation`, `camera_sol_position`), puis → `map` avec la position et l'attitude de l'EKF (tangage et roulis compensés). Détection ignorée si la position a plus de 0,2 s ou le marqueur plus de 4 m. Réglages : bloc `main_node` de `drone.yaml`.
+- **Fenêtre** (taille connue, `fenetre_taille`) : position du centre de l'ouverture et cap de sa normale côté recto, déduits d'un seul de ses ArUco (normale de sa face, retournée pour le verso, et décalage `fenetre_arucos` : `"id face u v"` depuis le centre, u horizontal vers la droite vu du recto, v vers le haut, mêmes axes vus du verso). Fenêtre supposée verticale. Décalages repris de la volière 2027 simulée, **à vérifier sur le règlement** ; aucune caméra du drone ne voit encore la fenêtre (verticale), le calcul est testé par `tests/unitaires/test_reperes.py`.
+- **Sauvegarde** : `donnees/carte.json` (`carte_sim.json` en simu, ignorés par git), réécrit à chaque changement avec le repère de l'EKF (`uwb`, `gps` ou `flux`). Au démarrage, par défaut, la carte part vide et l'ancienne est mise de côté (`carte_precedente.json`) : commande `charger_carte` (touche K du dashboard) pour la reprendre, par exemple après un changement de batterie ; `drone.launch.py garder_carte:=true` la reprend dès le démarrage. Sans UWB, l'origine de l'EKF est le point de décollage : une carte d'un autre vol n'est juste que si le drone est reparti du même endroit avec le même cap (avertissement au chargement).
+
+- **Position fiable** : le nœud `carte` refuse tout point (quel que soit le nœud qui l'envoie : `main_node`, plus tard la caméra avant) si `/position/fiable` dit faux (critère de `get_position()`, recalage de 3 s après le retour de l'UWB compris) ou a plus de `age_fiable_max` (0,5 s). Refus et reprise signalés sur `drone/logs`.
+- **Un seul repère par carte** : les points sont dans le repère de l'EKF du premier point (`/carte/repere`, publié par `main_node` : `uwb`, `gps`, `flux`). Si le repère de l'EKF change alors que la carte a des points (vol sans UWB après un vol avec), les ajouts sont refusés et signalés jusqu'à `reset_carte`. Sans UWB, une reconnexion de l'autopilote alors que la carte a des points est signalée : si la Pixhawk a redémarré, l'origine de l'EKF a changé et la carte est décalée.
+- **Sur le PC**, `ground/carte.py --repere auto` (défaut) suit le repère annoncé par le drone dans `drone/position` (`flux` : position décalée de `--depart`) ; la fenêtre est dessinée à sa taille (`taille` de `drone/carte`). Un nœud hors de `main_node` qui enregistre des points publie sur `/carte/ajouter` (et peut reprendre `reperes.py` pour le changement de repère) : il n'a rien d'autre à vérifier.
+
+La carte ne vaut que ce que vaut l'EKF : sans UWB (flux optique seul), la position est toujours jugée fiable mais dérive. À vérifier sur le vrai drone : orientation de la caméra et `camera_sol_position`.
+
+Sur le PC, `ground/carte.py` (ouvert par `ground/launch.py`) affiche en vue de dessus la volière, le drone (cap, trace des 60 dernières secondes), les points repérés et, en simu, la vérité Gazebo et l'écart à chaque ArUco attendu. Terrain : `--sim` le lit dans `sim/worlds/voliere.sdf` ; en réel, seulement `--taille LxP` (volière centrée) et `--depart x,y`. Sans UWB, l'origine de l'EKF est le départ du drone : la carte décale la position de `--depart` (et la tourne de `--rotation`) ; avec l'UWB, `--repere uwb` l'affiche telle quelle. La fenêtre est dessinée comme un trait de sa largeur, avec une flèche côté recto ; le robot avec l'âge de sa dernière vue. Tests : `tests/simu/carte.py` (mode `releve` en stationnaire, par MQTT seulement ; `--uwb` avec `PARAM_UWB=uwb` : ArUco 0 placé à moins de 8 cm une fois retirée l'erreur de l'EKF, EKF à moins de 30 cm de la vérité), `tests/simu/carte_mouvement.py` (avec l'UWB, dans le conteneur `drone` : passages au-dessus de l'ArUco 0 à 0,5 puis 1 m/s en mode `releve`, carte vidée avant chacun, point à moins de 15 cm ; panne d'UWB et recalage ; changement de repère refusé ; nœud `carte` redémarré : carte vide, `charger_carte` la reprend à l'identique) et `tests/unitaires/test_reperes.py` (changements de repère, fenêtre ; `python3 -m pytest`). À 1 m/s, l'ArUco n'est vu que 2 à 5 fois par passage (champ de ±0,3 m au sol à 1 m de haut, ~12 images/s) : avec `vues_min` = 3, il n'est placé qu'une fois sur deux environ (quand il l'est, à 10 cm au plus). Pour relever des points en vol, passer à 0,5 m/s ou moins, ou voler plus haut.
 
 ## Construire et lancer
 
@@ -200,7 +273,7 @@ Ce que lance chaque mode :
 | MAVROS (`mavros.launch.py`) | lancé | — | même fichier, lancé par le service `mavros` de la simu |
 | `camera` | lancé | lancé | — (le `bridge` publie les images) |
 | `servo` | GPIO | GPIO | mock (journal seulement) |
-| `main_node`, `vision`, `aruco`, `gstream`, `mqtt_server` | lancés | lancés | lancés |
+| `main_node`, `vision`, `aruco`, `carte`, `gstream`, `mqtt_server` | lancés | lancés | lancés |
 | `position_ext` | lancé | — | lancé (`/uwb/pose` vient du service `uwb`) |
 | `uwb` (tag UWB) | lancé | lancé | — (service `uwb` de la simu) |
 
@@ -331,7 +404,7 @@ Secours le jour de la finale, sans changer le code : finale en extérieur → `p
 |---|---|---|
 | Calibration de la caméra basse (distorsion) | #68 | `tools/calibration.py` sur la Pi, réécrit `config/camera/module3_640x480.yaml` |
 | ArUco : utilisation de la pose dans les missions (passage des fenêtres) | #15 | le nœud `aruco` publie déjà identifiant et pose 3D ; reste à s'en servir dans `droneload_vol`, et à mesurer la taille des vrais marqueurs (`marker_size`) |
-| Compensation de l'inclinaison de la caméra | #69 | positions des détections corrigées avec l'attitude (`/mavros/imu/data`), repère horizontal (tf2) |
+| Compensation de l'inclinaison de la caméra | #69 | positions des détections corrigées avec l'attitude (`/mavros/imu/data`), repère horizontal (tf2) ; déjà faite pour la carte (`reperes.py`) |
 | AI HAT (Hailo) | #27 | backend `hailo` de `vision.py` (paramètre `backend`) |
 | Caméra de profondeur | #28, #34 | `realsense2_camera` sur `/stereo/...`, puis remplacer `DISTANCE_AVANT` de l'épreuve 2 |
 | UWB | #17, #24 | chaîne complète écrite (section « UWB ») ; à valider avec les vraies cartes : format TLV, `/dev/uwb`, réglages `VISO_*` et `cap_ancres` |

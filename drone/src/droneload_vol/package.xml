@@ -3,7 +3,7 @@
 <package format="3">
   <name>droneload_vol</name>
   <version>0.1.0</version>
-  <description>Vol : nœud principal, interface MAVROS et missions</description>
+  <description>Vol : nœud principal, interface MAVROS, missions et carte du terrain</description>
   <maintainer email="droneload@todo.invalid">Équipe DroneLoad</maintainer>
   <license>TODO: License declaration</license>
 
@@ -15,6 +15,7 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

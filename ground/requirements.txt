@@ -1,2 +1,3 @@
-# PC de pilotage (dashboard)
+# PC de pilotage (dashboard, carte)
 paho-mqtt>=2.0
+matplotlib>=3.8

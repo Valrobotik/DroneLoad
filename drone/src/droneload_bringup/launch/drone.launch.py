@@ -10,6 +10,9 @@ Arguments :
   pc_ip        destination du flux vidéo (défaut : PC de pilotage en réel, host.docker.internal en simu)
   fcu_url      liaison MAVROS -> Pixhawk (défaut : celui de mavros.launch.py, port série de la Pi)
   model        modèle YOLO (défaut : models/best_ncnn_model du repo)
+  garder_carte true : la carte du lancement précédent est reprise (défaut : carte vide, l'ancienne
+               reste reprenable par la commande charger_carte du dashboard) ; sauvegarde dans
+               donnees/carte.json (donnees/carte_sim.json en simu), ignoré par git
 
 Construire avec `colcon build --symlink-install` : le repo est retrouvé depuis ce fichier.
 
@@ -35,6 +38,7 @@ RESPAWN_DELAY = 2.0             # s avant de relancer un nœud arrêté
 REPO = Path(__file__).resolve().parents[4]   # drone/src/droneload_bringup/launch/ -> racine du repo
 MODEL = REPO / 'models' / 'best_ncnn_model'
 CALIBRATION = REPO / 'config' / 'camera' / 'module3_640x480.yaml'   # calibration de la caméra (camera_info)
+DONNEES = REPO / 'donnees'   # carte sauvegardée (ignoré par git)
 LOCK = Path('/tmp/droneload-drone.lock')
 _lock_fd = None   # gardé ouvert tant que le launch tourne (libéré par le système à sa sortie)
 
@@ -75,6 +79,8 @@ def nodes(context):
         node('droneload_vol', 'main_node'),
         node('droneload_vision', 'vision', model_path=model),
         node('droneload_vision', 'aruco'),
+        node('droneload_vol', 'carte', fichier=str(DONNEES / ('carte_sim.json' if sim else 'carte.json')),
+             garder_carte=context.launch_configurations['garder_carte'] == 'true'),
         node('droneload_hardware', 'gstream', pc_ip=pc_ip),
         node('droneload_hardware', 'servo', mock=sim),
         mqtt_server,
@@ -103,5 +109,6 @@ def generate_launch_description():
         DeclareLaunchArgument('vision_only', default_value='false'),
         DeclareLaunchArgument('pc_ip', default_value=''),
         DeclareLaunchArgument('model', default_value=''),
+        DeclareLaunchArgument('garder_carte', default_value='false'),
         OpaqueFunction(function=nodes),
     ])

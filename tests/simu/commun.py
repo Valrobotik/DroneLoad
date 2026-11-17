@@ -5,6 +5,7 @@ Lancés dans un conteneur de la simu (companion ou drone), par tests/run.py ou �
 Le dossier du script est dans sys.path : `from commun import ...` suffit. Écrire un test : docs/tests.md.
 """
 import json
+import math
 import os
 import subprocess
 import time
@@ -95,19 +96,22 @@ def set_uwb(actif):
 
 
 def set_vitesse(v):
-    """Vitesse maximale de la mission deplacement (vitesse_max de main_node, modifiable en vol)."""
+    """Vitesse maximale des missions deplacement et releve (vitesse_max de main_node, modifiable en vol)."""
     return ros2('param', 'set', '/main_node', 'vitesse_max', str(float(v)))
 
 
 class ClientMqtt:
-    """Le drone vu du dashboard : télémétrie, logs ; commandes sur drone/cmd.
+    """Le drone vu du dashboard : télémétrie, logs, position, carte ; commandes sur drone/cmd.
 
-    Attributs mis à jour par MQTT : telemetry (dict), logs et heures_logs (time.monotonic() de réception). Les logs et les changements d'état de mission
+    Attributs mis à jour par MQTT : telemetry (dict), position (drone/position), carte (drone/carte),
+    logs et heures_logs (time.monotonic() de réception). Les logs et les changements d'état de mission
     sont affichés.
     """
 
     def __init__(self, nom, afficher_logs=True, afficher_mission=True):
         self.telemetry = None
+        self.position = None
+        self.carte = None
         self.logs = []
         self.heures_logs = []
         self.afficher_logs = afficher_logs
@@ -115,7 +119,7 @@ class ClientMqtt:
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, nom)
         self.client.on_message = self._on_message
         self.client.connect(*BROKER)
-        self.client.subscribe([('drone/telemetry', 0), ('drone/logs', 0)])
+        self.client.subscribe([('drone/telemetry', 0), ('drone/logs', 0), ('drone/position', 0), ('drone/carte', 0)])
         self.client.loop_start()
 
     def _on_message(self, client, userdata, msg):
@@ -134,6 +138,10 @@ class ClientMqtt:
             if self.afficher_mission and self.telemetry and data.get('mission') != self.telemetry.get('mission'):
                 print(f"    état mission : {data.get('mission')}", flush=True)
             self.telemetry = data
+        elif msg.topic == 'drone/position':
+            self.position = data
+        else:
+            self.carte = data
 
     # --- Commandes (comme le dashboard) ---
     def commande(self, action, **data):
@@ -157,6 +165,18 @@ class ClientMqtt:
     def en_vol(self, tolerance=0.2):
         t = self.telemetry or {}
         return t.get('armed') and t.get('height') is not None and abs(t['height'] - TAKEOFF_ALT) < tolerance
+
+    def point(self, genre, nom):
+        """Point de la carte (drone/carte) ou None."""
+        return next((p for p in self.carte or [] if p.get('type') == genre and p.get('nom') == str(nom)), None)
+
+    def ecart_ekf_verite(self, decalage=(0.0, 0.0)):
+        """Distance horizontale EKF - vérité Gazebo (m), EKF décalé de decalage (départ sans UWB) ; None sans les deux."""
+        p = self.position or {}
+        if not p.get('ekf') or not p.get('verite'):
+            return None
+        return math.dist((p['ekf']['x'] + decalage[0], p['ekf']['y'] + decalage[1]),
+                         (p['verite']['x'], p['verite']['y']))
 
     def heure_log(self, motif, depuis=0):
         """time.monotonic() de réception du premier log contenant motif (à partir de l'indice depuis), ou None."""

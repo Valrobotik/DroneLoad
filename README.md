@@ -18,16 +18,16 @@ Références complètes, positions des capteurs et masse estimée : section « M
 drone/               code embarqué (Raspberry Pi) : workspace ROS 2, voir docs/architecture.md
   src/               paquets ROS 2 :
     droneload_bringup/  lancement (drone.launch.py) et paramètres (drone.yaml)
-    droneload_vol/      nœud principal, interface MAVROS, missions (décollage, atterrissage, déplacement, épreuves)
+    droneload_vol/      nœud principal, interface MAVROS, missions (décollage, atterrissage, déplacement, relevé, épreuves), carte
                         créer une mission : docs/architecture.md, « Ajouter une mission »
     droneload_vision/   détection YOLO (traitement d'image seulement)
     droneload_hardware/ entrées/sorties : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT
 tools/               scripts autonomes (calibration caméra -> config/camera/)
-ground/              PC de pilotage : dashboard MQTT + lanceur (macOS, Linux, Windows)
+ground/              PC de pilotage : dashboard MQTT, carte de la volière + lanceur (macOS, Linux, Windows)
   requirements.txt
 sim/                 simulation (Docker Compose) : monde Gazebo, modèle du drone, bridge, outils (scripts/)
   docker/            Dockerfiles
-tests/               tests : run.py (lanceur), simu/ (de bout en bout dans la simu)
+tests/               tests : run.py (lanceur), unitaires/ (sans ROS), simu/ (de bout en bout dans la simu)
 config/              configuration des équipements
   ardupilot/         paramètres ArduPilot (communs réel/SITL + spécifiques SITL)
   camera/            calibration de la caméra (générée par tools/calibration.py)
@@ -103,7 +103,9 @@ Sur le PC, depuis la racine du repo :
 ```bash
 .venv/bin/python ground/launch.py --broker <IP du Pi>    # Windows : .venv\Scripts\python
 ```
-Le script ouvre la fenêtre vidéo GStreamer (UDP 5000) et lance le dashboard dans le terminal. Sur macOS, `ground/dashboard.command` fait la même chose en double-clic. Dans le dashboard, `[6]` lance la mission déplacement et `[G]` envoie le point visé (m, repère de la Pixhawk).
+Le script ouvre la fenêtre vidéo GStreamer (UDP 5000), la carte de la volière (`ground/carte.py`, vue de dessus : position du drone estimée par la Pixhawk, trace, points enregistrés sur la carte par les missions : ArUco, fenêtre, robot, images) et lance le dashboard dans le terminal. Sur macOS, `ground/dashboard.command` fait la même chose en double-clic.
+
+La carte a besoin de la taille de la volière et du point de départ du drone (sans UWB, l'origine de la position de la Pixhawk est ce point de départ) : `--taille 8x6 --depart -3.75,-1.5` (m, repère centré sur la volière ; `--rotation` si l'axe est de la Pixhawk n'est pas l'axe x de la volière ; avec l'UWB, le drone l'annonce et la carte l'affiche telle quelle). En simulation, `--sim` lit tout dans `sim/worlds/voliere.sdf` et affiche aussi la position réelle du drone dans Gazebo. Dans le dashboard, `[6]` / `[7]` lancent les missions déplacement / relevé, `[G]` envoie le point visé, `[E]` efface les points repérés, `[K]` reprend la carte du lancement précédent (le drone repart avec une carte vide, l'ancienne est gardée de côté).
 
 Les réglages du drone (hauteur de décollage, résolution, ports, broker) sont dans `drone/src/droneload_bringup/config/drone.yaml`.
 

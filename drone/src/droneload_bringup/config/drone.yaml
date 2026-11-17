@@ -9,10 +9,22 @@ main_node:
     image_width: 640              # px, pour le centrage en épreuve 2
     ekf_origin: [45.7838, 4.8722, 170.0]   # origine EKF fictive (sans GPS, requise par GUIDED)
     delai_source: 1.0             # s : position UWB envoyée à la Pixhawk plus vieille = position non fiable
-    delai_recalage: 3.0           # s après le retour de l'UWB avant de rejuger la position fiable (recalage de l'EKF)
+    delai_recalage: 3.0           # s après le retour de l'UWB avant de rejuger la position fiable (recalage de l'EKF) : missions et carte
     delai_position: 30.0          # s de perte de position avant d'abandonner la mission (puis stationnaire, pilote)
-    vitesse_max: 0.5              # m/s, mission deplacement (modifiable en vol : ros2 param set /main_node vitesse_max)
-    precision: 0.1                # m, mission deplacement : point atteint
+    vitesse_max: 0.5              # m/s, missions deplacement et releve (modifiable en vol : ros2 param set /main_node vitesse_max)
+    precision: 0.1                # m, missions deplacement et releve : point atteint
+    # Carte (carte_client.py) : ce que voit la caméra sol, dans le repère map
+    camera_sol_position: [0.05, 0.0, -0.04]   # m, repère du drone (avant, gauche, haut) ; à mesurer sur le vrai
+    camera_sol_rotation: [0.0, -1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0]   # optique -> drone : haut de l'image vers l'avant
+    age_pose_max: 0.2             # s : détection ignorée si la position du drone est plus vieille
+    distance_max: 4.0             # m : ArUco plus loin ignoré (pose imprécise)
+    aruco_robot: 1                # ArUco posé sur le robot (règlement 2027)
+    fenetre_nom: '1'
+    # ArUco de la fenêtre : "id face u v", m depuis le centre de l'ouverture ; u horizontal vers la droite vu
+    # du recto, v vers le haut (mêmes axes vus du verso). Repris de la volière 2027 simulée : à vérifier
+    # sur le règlement et sur la vraie fenêtre
+    fenetre_arucos: ['4 recto 0.43 -0.68', '5 recto 0.43 0.68', '6 recto -0.43 0.68', '7 recto -0.43 -0.68',
+                     '8 verso 0.1667 -0.68', '9 verso 0.1667 0.68']
 
 camera:
   ros__parameters:
@@ -29,6 +41,15 @@ aruco:
   ros__parameters:
     dictionary: DICT_4X4_50
     marker_size: 0.20             # m, côté du carré noir (volière simulée : 20 cm ; à mesurer sur les vrais)
+
+carte:
+  ros__parameters:
+    vues_min: 3                   # vues avant de publier un point moyenné
+    ecart_max: 0.5                # m : vue plus loin de la moyenne rejetée (après 2 x vues_min vues)
+    remplacer: ['robot', 'cible'] # types où chaque vue remplace la précédente (publiés dès la 1re vue)
+    fenetre_taille: [1.0, 1.0]    # m, largeur et hauteur de l'ouverture (règlement 2027)
+    age_fiable_max: 0.5           # s : /position/fiable plus vieux = position non fiable
+    # fichier et garder_carte : drone.launch.py (donnees/carte.json, argument garder_carte)
 
 gstream:
   ros__parameters:

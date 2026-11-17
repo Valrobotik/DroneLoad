@@ -1,0 +1,21 @@
+# Tests unitaires (tests/unitaires/ : sans ROS ni simulation) sur chaque PR vers main.
+# Les tests de simulation (tests/simu/) se lancent en local : python3 tests/run.py (voir docs/tests.md).
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unitaires:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'   # = Ubuntu 24.04 (Pi, simu)
+      - run: pip install pytest
+      - run: python3 tests/run.py unitaires

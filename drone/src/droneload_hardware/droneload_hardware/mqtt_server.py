@@ -1,12 +1,16 @@
 """Liaison MQTT avec le dashboard du PC (ground/) et le robot sol ESP32.
 
-Protocole du code 2026 (l'ESP32 n'a rien à changer), complété pour ground/ (set_point,
+Protocole du code 2026 (l'ESP32 n'a rien à changer), complété pour ground/ (set_point, carte,
 position_fiable dans la télémétrie) :
 - drone/cmd (JSON {"action": ...}) : set_mode, set_class, set_point (x, y en m, repère de l'EKF,
   mission deplacement), set_hook, arm, disarm ;
 - drone/system : reboot, restart_script, shutdown, reboot_fcu (Pixhawk) (refusés drone armé) ;
 - robot/ping : heartbeat de l'ESP32 (déconnecté après 4 s sans ping) ;
-- publiés : drone/logs (texte) et drone/telemetry (JSON, toutes les secondes).
+- publiés : drone/logs (texte) et drone/telemetry (JSON, toutes les secondes) ;
+- carte (ground/carte.py) : drone/position (JSON, 5 Hz : position EKF, vérité Gazebo en simu, repère de
+  l'EKF), drone/carte (JSON retained, points de /carte/points : type, nom, x, y, z, cap en degrés ou null,
+  vues, age en s, taille [largeur, hauteur] en m), commandes reset_carte (vide la carte) et charger_carte (reprend la carte du lancement
+  précédent) sur drone/cmd.
 
 Les logs des nœuds du drone (/rosout) sont aussi renvoyés sur drone/logs.
 
@@ -25,23 +29,25 @@ from pathlib import Path
 import paho.mqtt.client as mqtt
 import psutil
 import rclpy
-from geometry_msgs.msg import Point, PoseWithCovarianceStamped
+from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandLong
 from rcl_interfaces.msg import Log
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, CameraInfo, Range
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, Empty, String
 from vision_msgs.msg import Detection2DArray
+from visualization_msgs.msg import Marker, MarkerArray
 
 ESP_TIMEOUT = 4.0     # s sans ping avant de considérer l'ESP32 déconnecté
 HEIGHT_MAX_AGE = 1.0  # s : au-delà, la hauteur lidar n'est plus affichée
 HOOK_MAX_AGE = 2.5    # s sans /hook/ready (publié chaque seconde) : nœud servo arrêté
 SYSTEM_DELAY = 0.5    # s laissées au message de partir vers le PC avant reboot, restart_script, shutdown
-FORWARDED_NODES = {'main_node', 'vision', 'aruco', 'gstream', 'camera', 'servo', 'position_ext', 'uwb'}   # logs renvoyés au PC
+FORWARDED_NODES = {'main_node', 'vision', 'aruco', 'gstream', 'camera', 'servo', 'position_ext', 'uwb', 'carte'}   # logs renvoyés au PC
 HOOK_STATES = {'hook_open': True, 'hook_close': False}
-POSITION_MAX_AGE = 1.0   # s : au-delà, position_fiable n'est plus envoyée (null)
+POSITION_MAX_AGE = 1.0   # s : au-delà, la position n'est plus envoyée (null)
+POSITION_PERIOD = 0.2    # s entre deux drone/position
 BILAN_DELAY = 20.0    # s après le lancement : Pixhawk connectée, caméra ouverte, modèle chargé
 MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN = 246
 REPO = Path(__file__).resolve().parents[4]   # --symlink-install : drone/src/<paquet>/<paquet>/ -> racine du repo
@@ -65,6 +71,14 @@ def undervoltage_file():
         except OSError:
             continue
     return None
+
+
+def pose_json(pose):
+    """Position (m) et cap (degrés, 0 = est, sens trigo : repère ENU) d'une geometry_msgs/Pose."""
+    o = pose.orientation
+    cap = math.degrees(math.atan2(2 * (o.w * o.z + o.x * o.y), 1 - 2 * (o.y ** 2 + o.z ** 2)))
+    return {'x': round(pose.position.x, 3), 'y': round(pose.position.y, 3), 'z': round(pose.position.z, 3),
+            'cap': round(cap, 1)}
 
 
 def check_install():
@@ -103,8 +117,15 @@ class MqttServer(Node):
         # Mesures UWB (pilote du tag sur la Pi, service uwb en simu), transmises à la Pixhawk par position_ext
         self.create_subscription(PoseWithCovarianceStamped, '/uwb/pose', self._on_uwb, qos_profile_sensor_data)
         self.create_subscription(Log, '/rosout', self._on_rosout, 100)
-        # Position jugée fiable par main_node (télémétrie position_fiable)
+        # Carte (ground/carte.py) : position EKF, points repérés (nœud carte), vérité Gazebo (simu seulement,
+        # affichage sur le PC, jamais utilisée pour voler)
+        self.reset_carte_pub = self.create_publisher(Empty, '/carte/reset', 10)
+        self.charger_carte_pub = self.create_publisher(Empty, '/carte/charger', 10)
+        self.create_subscription(PoseStamped, '/mavros/local_position/pose', self._on_local_pose, qos_profile_sensor_data)
+        self.create_subscription(PoseStamped, '/sim/drone/pose', self._on_verite, qos_profile_sensor_data)
+        self.create_subscription(MarkerArray, '/carte/points', self._on_carte, latched)
         self.create_subscription(Bool, '/position/fiable', self._on_position_fiable, 10)
+        self.create_subscription(String, '/carte/repere', self._on_repere, latched)
 
         self.current_mode = 'attente'
         self.mission_state = None     # état réel publié par main_node (<mode>:<état>)
@@ -122,8 +143,13 @@ class MqttServer(Node):
         self.batt_pct = -1
         self.last_esp_ping = 0.0
         self.esp_connected = False
+        self.local_pose = None
+        self.local_pose_time = 0.0
+        self.verite = None
+        self.verite_time = 0.0
         self.position_fiable = None
         self.position_fiable_time = 0.0
+        self.repere = None            # repère de l'EKF (uwb, gps, flux), None tant que le drone n'a pas armé
 
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, 'Drone_Main')
         self.client.on_connect = self._on_connect
@@ -140,6 +166,7 @@ class MqttServer(Node):
         self.undervoltage = False
         self.undervoltage_count = 0   # passages en sous-tension depuis le lancement
         self.create_timer(1.0, self._telemetry)
+        self.create_timer(POSITION_PERIOD, self._position)
         # Temps réel, pas un timer ROS : en simu, l'horloge simulée saute au 1er /clock et le déclencherait aussitôt
         self.bilan_at = time.monotonic() + BILAN_DELAY
 
@@ -215,6 +242,12 @@ class MqttServer(Node):
                 return
             self.hook_pub.publish(Bool(data=HOOK_STATES[state]))
             self.log_to_pc(f'Action crochet demandée : {state}')
+        elif action == 'reset_carte':
+            self.reset_carte_pub.publish(Empty())
+            self.log_to_pc('Carte effacée (demande du PC)')
+        elif action == 'charger_carte':
+            self.charger_carte_pub.publish(Empty())
+            self.log_to_pc('Carte précédente demandée (demande du PC)')
         elif action in ('arm', 'disarm'):
             self.log_to_pc(f'Commande de {"" if action == "arm" else "dés"}armement reçue !')
             if self.arming.service_is_ready():
@@ -312,9 +345,45 @@ class MqttServer(Node):
     def _on_uwb(self, msg):
         self.uwb_mesures += 1
 
+    def _on_local_pose(self, msg):
+        self.local_pose = msg.pose
+        self.local_pose_time = time.monotonic()
+
+    def _on_verite(self, msg):
+        self.verite = msg.pose
+        self.verite_time = time.monotonic()
+
+    def _on_repere(self, msg):
+        self.repere = msg.data
+
     def _on_position_fiable(self, msg):
         self.position_fiable = msg.data
         self.position_fiable_time = time.monotonic()
+
+    def _on_carte(self, msg):
+        points = []
+        for m in msg.markers:
+            if m.action != Marker.ADD:
+                continue
+            try:
+                info = json.loads(m.text)   # nom, vues, age, cap (le point a-t-il une orientation)
+            except ValueError:
+                continue
+            p = pose_json(m.pose)
+            points.append({'type': m.ns, 'nom': info.get('nom'), 'x': p['x'], 'y': p['y'], 'z': p['z'],
+                           'cap': p['cap'] if info.get('cap') else None, 'vues': info.get('vues'),
+                           'age': info.get('age'), 'taille': [round(m.scale.y, 3), round(m.scale.z, 3)]})
+        # retained : une carte ouverte plus tard la reçoit tout de suite
+        self.client.publish('drone/carte', json.dumps(points), retain=True)
+
+    def _position(self):
+        now = time.monotonic()
+        position = {
+            'ekf': pose_json(self.local_pose) if self.local_pose and now - self.local_pose_time < POSITION_MAX_AGE else None,
+            'verite': pose_json(self.verite) if self.verite and now - self.verite_time < POSITION_MAX_AGE else None,
+            'repere': self.repere,   # ground/carte.py --repere auto : décale la position du départ si flux
+        }
+        self.client.publish('drone/position', json.dumps(position))
 
     def _on_hook_ready(self, msg):
         self.hook_ready = msg.data

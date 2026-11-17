@@ -178,7 +178,7 @@ class UwbTest(Node):
         return self.state.armed and self.at_alt()
 
     def set_vitesse(self, v):
-        """Vitesse maximale de la mission deplacement (paramètre vitesse_max de main_node, modifiable en vol)."""
+        """Vitesse maximale des missions deplacement et releve (paramètre vitesse_max de main_node, modifiable en vol)."""
         reponse = self.call(self.main_params, SetParameters.Request(
             parameters=[Parameter('vitesse_max', value=float(v)).to_parameter_msg()]))
         return reponse is not None and reponse.results[0].successful

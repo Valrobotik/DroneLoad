@@ -1,14 +1,18 @@
 """Nœud principal du drone : lit le mode demandé (depuis le dashboard, via mqtt_server) et fait
 avancer la mission correspondante d'un pas à chaque tick (20 Hz).
 
-Modes : attente, takeoff, land, epreuve1, epreuve2, deplacement. À chaque demande de mode, même
+Modes : attente, takeoff, land, epreuve1, epreuve2, deplacement, releve. À chaque demande de mode, même
 identique au mode en cours, la mission est réinitialisée : une 2e demande de décollage ou d'atterrissage
 repart du début. Les modes qui ne pilotent pas le drone (attente, epreuve1) le tiennent en stationnaire.
 
 Missions : table self.missions (mode -> objet). Une mission standard a reset(), state et run(drone, now) ;
 pour en ajouter une : l'écrire dans missions/, puis une ligne dans self.missions (rien d'autre à brancher).
 
-/position/fiable (std_msgs/Bool, chaque tick) : même critère que la pause des missions.
+Carte : self.carte (carte_client.py) donne aux missions la carte (get, liste), l'ajout de points
+(ajouter) et ce que voit la caméra sol dans le repère map (arucos_vus, images_vues, enregistrer_vus).
+Mission releve : enregistre tout ce qui est vu, en stationnaire ou vers un point envoyé pendant le relevé.
+
+/position/fiable (std_msgs/Bool, chaque tick) : même critère que la pause des missions, lu par le nœud carte.
 
 Perte de position : une mission qui en a besoin (besoin_position = True, ex. deplacement) n'est pas
 appelée tant que drone.get_position() est None ; le drone reste en stationnaire (au flux optique) et l'état est
@@ -23,8 +27,9 @@ from rclpy.qos import QoSDurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from std_msgs.msg import Bool, String
 from vision_msgs.msg import Detection2DArray
 
+from .carte_client import CarteClient, declarer_parametres
 from .mavros import MavrosDrone
-from .missions import Atterrissage, Decollage, Deplacement, Epreuve1, run_epreuve2
+from .missions import Atterrissage, Decollage, Deplacement, Epreuve1, Releve, run_epreuve2
 
 MODES_SANS_MISSION = ('attente', 'epreuve2')   # modes traités directement par _step
 # Modes que la reprise en main par le pilote n'arrête pas : takeoff passe lui-même en GUIDED, land en LAND
@@ -45,8 +50,8 @@ class MainNode(Node):
         self.declare_parameter('delai_source', 1.0)     # s : position UWB plus vieille = position non fiable
         self.declare_parameter('delai_recalage', 3.0)   # s après le retour de l'UWB avant de juger la position fiable
         self.declare_parameter('delai_position', 30.0)  # s de perte de position avant d'abandonner la mission
-        self.declare_parameter('vitesse_max', 0.5)      # m/s, mission deplacement (modifiable en vol)
-        self.declare_parameter('precision', 0.1)        # m, mission deplacement
+        self.declare_parameter('vitesse_max', 0.5)      # m/s, missions deplacement et releve (modifiable en vol)
+        self.declare_parameter('precision', 0.1)        # m, missions deplacement et releve
 
         log = self.get_logger()
         self.drone = MavrosDrone(self, tuple(self.get_parameter('ekf_origin').value),
@@ -57,6 +62,10 @@ class MainNode(Node):
                                        self.get_parameter('precision').value)
         self.perte_position = None   # heure du début de la perte de position (mission en pause)
         self.abandon = False
+        declarer_parametres(self)
+        self.carte = CarteClient(self, self.drone)
+        self.releve = Releve(log, self.carte, self.get_parameter('vitesse_max').value,
+                             self.get_parameter('precision').value)
         self.decollage = Decollage(log, self.get_parameter('takeoff_altitude').value)
         self.atterrissage = Atterrissage(log)
         self.epreuve1 = Epreuve1(log)
@@ -68,6 +77,7 @@ class MainNode(Node):
             'land': self.atterrissage,
             'epreuve1': self.epreuve1,
             'deplacement': self.deplacement,
+            'releve': self.releve,
         }
         self.modes = MODES_SANS_MISSION + tuple(self.missions)
 
@@ -85,7 +95,8 @@ class MainNode(Node):
                                  qos_profile_sensor_data)
         self.state_pub = self.create_publisher(String, '/mission/state', LATCHED)
         self.hook_pub = self.create_publisher(Bool, '/hook/cmd', 10)
-        # Position jugée fiable (get_position non None), à chaque tick (télémétrie)
+        # Position jugée fiable (get_position non None), à chaque tick : le nœud carte refuse tout point
+        # enregistré sans (y compris par des nœuds hors de main_node, ex. caméra avant)
         self.fiable_pub = self.create_publisher(Bool, '/position/fiable', 10)
 
         self.add_on_set_parameters_callback(self._on_parametres)
@@ -119,6 +130,8 @@ class MainNode(Node):
         self.get_logger().info(f'Point visé : ({msg.x:.2f}, {msg.y:.2f})')
         if self.mode == 'deplacement':
             self.deplacement.reset()
+        elif self.mode == 'releve':   # point envoyé pendant le relevé seulement (Releve.reset l'oublie)
+            self.releve.set_point(msg.x, msg.y)
 
     def _position_ok(self, now):
         """Pause ou abandon d'une mission qui a besoin de la position ; vrai si elle peut avancer."""
@@ -160,12 +173,13 @@ class MainNode(Node):
         self.drone.hover()
 
     def _on_parametres(self, parametres):
-        """vitesse_max modifiable en vol (ros2 param set /main_node vitesse_max 1.0)  : mission deplacement."""
+        """vitesse_max modifiable en vol (ros2 param set /main_node vitesse_max 1.0) : missions deplacement, releve."""
         for p in parametres:
             if p.name == 'vitesse_max':
                 if not isinstance(p.value, (int, float)) or p.value <= 0:
                     return SetParametersResult(successful=False, reason='vitesse_max > 0 en m/s')
-                self.deplacement.vitesse_max = float(p.value)
+                for deplacement in (self.deplacement, self.releve.deplacement):
+                    deplacement.vitesse_max = float(p.value)
                 self.get_logger().info(f'Vitesse maximale des déplacements : {p.value:.2f} m/s')
         return SetParametersResult(successful=True)
 

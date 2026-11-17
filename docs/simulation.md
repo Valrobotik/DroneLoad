@@ -42,7 +42,7 @@ Position UWB fusionnée dans l'EKF (surcouche `uwb.param`, vide par défaut comm
 
 ```bash
 PARAM_UWB=uwb docker compose --profile drone up -d
-python3 ../tests/run.py avec_uwb             # uwb, position, uwb_pilote
+python3 ../tests/run.py avec_uwb             # uwb, position, carte_uwb, carte_mouvement, uwb_pilote
 ```
 Pour changer `PARAM_UWB`, tout arrêter (`docker compose --profile '*' down`) puis relancer : un `up -d` sur une simu qui tourne ne recrée que le SITL, et MAVROS comme le code du drone restent sur les paramètres de l'ancien (`EK3_SRC1_POSXY` : ils croiraient la simu sans UWB).
 Le dashboard se branche comme sur le vrai drone : `.venv/bin/python ground/launch.py --broker localhost`, avec le flux vidéo annoté.
@@ -56,7 +56,7 @@ ros2 topic hz /camera/image_raw
 
 ## Tests
 
-Les tests (de bout en bout dans la simu) et leur lanceur sont décrits dans [tests.md](tests.md). En bref : `python3 tests/run.py --liste`, puis `python3 tests/run.py <test>` depuis la racine du repo ; le lanceur démarre la simu dans la bonne config et l'arrête ensuite.
+Les tests (unitaires et de bout en bout dans la simu) et leur lanceur sont décrits dans [tests.md](tests.md). En bref : `python3 tests/run.py --liste`, puis `python3 tests/run.py <test>` depuis la racine du repo ; le lanceur démarre la simu dans la bonne config et l'arrête ensuite.
 
 ## Services
 

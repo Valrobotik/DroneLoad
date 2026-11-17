@@ -12,11 +12,12 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    description='Vol : nœud principal, interface MAVROS et missions',
+    description='Vol : nœud principal, interface MAVROS, missions et carte du terrain',
     license='TODO: License declaration',
     entry_points={
         'console_scripts': [
             'main_node = droneload_vol.main_node:main',
+            'carte = droneload_vol.carte:main',
         ],
     },
 )

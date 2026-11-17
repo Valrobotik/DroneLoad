@@ -2,7 +2,7 @@
 """Lance les tests du drone (PC : macOS, Linux, Windows ; Python standard seulement).
 
     python3 tests/run.py --liste                  tests, suites et ce qu'il leur faut
-    python3 tests/run.py mission uwb              un ou plusieurs tests (ou suites)
+    python3 tests/run.py mission carte            un ou plusieurs tests (ou suites)
     python3 tests/run.py tout                     tous les tests
 
 Pour chaque test de simulation, le lanceur prépare la simu Docker comme il faut : il la démarre si elle
@@ -49,10 +49,15 @@ class Test:
 
 
 TESTS = {
+    'unitaires': Test('changements de repère de la carte, sans ROS ni simu (pytest)'),
     'smoke': Test('autopilote seul : MAVROS, capteurs, décollage, stationnaire, atterrissage',
                   'python3 tests/simu/smoke.py', drone=False),
     'mission': Test('code du drone : 2 cycles décollage / attente / atterrissage par MQTT, ArUco 0',
                     'python3 tests/simu/mission.py'),
+    'carte': Test('carte en stationnaire (mission releve), sans UWB', 'python3 tests/simu/carte.py', uwb=False),
+    'carte_uwb': Test('carte en stationnaire, avec l\'UWB', 'python3 tests/simu/carte.py --uwb', uwb=True),
+    'carte_mouvement': Test('carte en mouvement (0,5 et 1 m/s), panne et recalage, repère, reprise après '
+                            'redémarrage', 'python3 tests/simu/carte_mouvement.py', conteneur='drone', uwb=True),
     'position': Test('perte de position en mission : pause, recalage, abandon, reprise en main par le pilote',
                      'python3 tests/simu/position.py', uwb=True),
     'uwb': Test('position UWB dans l\'EKF : stationnaire, sauts, carrés, pannes, jeu de sources 2',
@@ -61,8 +66,8 @@ TESTS = {
                        '. drone/install/setup.bash && python3 tests/simu/uwb_pilote.py', reset=False),
 }
 SUITES = {
-    'base': ['smoke', 'mission'],
-    'avec_uwb': ['uwb', 'position', 'uwb_pilote'],
+    'base': ['unitaires', 'smoke', 'mission', 'carte'],
+    'avec_uwb': ['uwb', 'position', 'carte_uwb', 'carte_mouvement', 'uwb_pilote'],
 }
 SUITES['tout'] = SUITES['base'] + SUITES['avec_uwb']
 

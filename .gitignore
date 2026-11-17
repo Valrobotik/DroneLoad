@@ -15,5 +15,8 @@ drone/build/
 drone/install/
 drone/log/
 
+# Carte sauvegardée par le drone (nœud carte, drone.launch.py)
+donnees/
+
 # Journaux du lanceur de tests (tests/run.py)
 tests/resultats/

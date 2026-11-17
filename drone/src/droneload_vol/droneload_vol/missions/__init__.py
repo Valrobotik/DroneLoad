@@ -16,5 +16,6 @@ from .decollage import Decollage
 from .deplacement import Deplacement
 from .epreuve1 import Epreuve1
 from .epreuve2 import run_epreuve2
+from .releve import Releve
 
-__all__ = ['Atterrissage', 'Decollage', 'Deplacement', 'Epreuve1', 'run_epreuve2']
+__all__ = ['Atterrissage', 'Decollage', 'Deplacement', 'Epreuve1', 'Releve', 'run_epreuve2']
