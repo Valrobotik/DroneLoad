@@ -30,16 +30,10 @@ docker compose logs -f sitl          # suivre un service
 docker compose down                  # tout arrêter
 ```
 
-Vérifier que tout marche avec le test de fumée (décollage à 1 m mesuré au lidar, 5 s de vol stationnaire, atterrissage) :
-```bash
-docker compose exec companion bash -lc 'python3 sim/scripts/smoke_test.py'
-```
-
-Lancer le code du drone (les paquets ROS 2 de `drone/`, voir [architecture.md](architecture.md)) : le service `drone` le construit puis le lance avec `sim:=true`. Il est dans un profil à part, car il pilote l'autopilote : ne pas le lancer pendant `smoke_test.py`.
+Lancer le code du drone (les paquets ROS 2 de `drone/`, voir [architecture.md](architecture.md)) : le service `drone` le construit puis le lance avec `sim:=true`. Il est dans un profil à part, car il pilote l'autopilote : ne pas le lancer pendant le test `smoke` (le lanceur l'arrête le temps du test).
 ```bash
 docker compose --profile drone up -d          # Linux : -f compose.yml -f compose.linux.yml --profile drone up -d
 docker compose logs -f drone
-docker compose exec companion bash -lc 'python3 sim/scripts/mission_test.py'   # 2 cycles décollage / attente / atterrissage par MQTT + pose de l'ArUco 0 (drone au départ : reset_drone.sh)
 docker compose restart drone                  # après une modification du code
 docker compose --profile drone down           # tout arrêter, y compris le drone
 ```
@@ -51,6 +45,10 @@ docker compose exec companion bash
 ros2 topic list
 ros2 topic hz /camera/image_raw
 ```
+
+## Tests
+
+Les tests (de bout en bout dans la simu) et leur lanceur sont décrits dans [tests.md](tests.md). En bref : `python3 tests/run.py --liste`, puis `python3 tests/run.py <test>` depuis la racine du repo ; le lanceur démarre la simu dans la bonne config et l'arrête ensuite.
 
 ## Services
 

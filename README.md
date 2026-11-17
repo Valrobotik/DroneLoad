@@ -24,15 +24,16 @@ drone/               code embarqué (Raspberry Pi) : workspace ROS 2, voir docs/
 tools/               scripts autonomes (calibration caméra -> config/camera/)
 ground/              PC de pilotage : dashboard MQTT + lanceur (macOS, Linux, Windows)
   requirements.txt
-sim/                 simulation (Docker Compose) : monde Gazebo, modèle du drone, bridge, test de fumée
+sim/                 simulation (Docker Compose) : monde Gazebo, modèle du drone, bridge, outils (scripts/)
   docker/            Dockerfiles
+tests/               tests : run.py (lanceur), simu/ (de bout en bout dans la simu)
 config/              configuration des équipements
   ardupilot/         paramètres ArduPilot (communs réel/SITL + spécifiques SITL)
   camera/            calibration de la caméra (générée par tools/calibration.py)
                      (à venir : elrs/, radio/)
 install/             installation Ansible des ordinateurs (Pi, images Docker, PC Linux) : voir install/README.md
 models/              modèle YOLO entraîné (best.pt + export NCNN)
-docs/                documentation (architecture ROS 2, simulation)
+docs/                documentation (architecture ROS 2, simulation, tests)
 .github/             règles de contribution : contrôle des PR, hook et modèle de commit
 ```
 
@@ -110,10 +111,13 @@ Les réglages du drone (hauteur de décollage, résolution, ports, broker) sont 
 ArduPilot SITL + Gazebo + ROS 2 dans Docker, identique sur Mac et Linux. Voir [docs/simulation.md](docs/simulation.md).
 ```bash
 cd sim
-docker compose up -d
-docker compose exec companion bash -lc 'python3 sim/scripts/smoke_test.py'    # autopilote seul
-docker compose --profile drone up -d                                          # + code du drone
-docker compose exec companion bash -lc 'python3 sim/scripts/mission_test.py'  # mission par MQTT
+docker compose --profile drone up -d          # simu + code du drone
+```
+
+Tests (dans `tests/`, hors du code du drone) : le lanceur prépare la simu pour chacun (code du drone ou non, remise au départ) et fait le bilan. Voir [docs/tests.md](docs/tests.md) (ce que vérifie chaque test, comment en écrire un).
+```bash
+python3 tests/run.py --liste      # tests et suites
+python3 tests/run.py mission      # un test ; suites : base, tout
 ```
 
 ## Protocole MQTT

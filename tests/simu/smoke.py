@@ -1,6 +1,7 @@
 """Test de fumée de la simulation : capteurs, MAVROS, décollage à 1 m (lidar), vol stationnaire, atterrissage.
 
-Usage : docker compose exec companion bash -lc 'python3 sim/scripts/smoke_test.py'
+Lancement : python3 tests/run.py smoke (arrête le service drone le temps du test). À la main, simu sans le
+code du drone (docker compose up -d) : docker compose exec companion bash -lc 'python3 tests/simu/smoke.py'
 Code de sortie 0 si tout est OK, 1 sinon.
 """
 import sys
@@ -13,6 +14,8 @@ from mavros_msgs.srv import CommandBool, CommandTOL, MessageInterval, SetMode, S
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, Range
+
+from commun import Etapes
 
 TAKEOFF_ALT = 1.0      # m au-dessus du sol, mesuré par le lidar (référence d'ArduPilot en intérieur)
 ALT_TOLERANCE = 0.2    # m
@@ -104,12 +107,7 @@ class SmokeTest(Node):
 def main():
     rclpy.init()
     node = SmokeTest()
-    steps = []
-
-    def step(name, ok):
-        print(f"[{'OK' if ok else 'ÉCHEC'}] {name}", flush=True)
-        steps.append(ok)
-        return ok
+    step = Etapes("TEST DE FUMÉE")
 
     try:
         if not step("MAVROS connecté au SITL", node.wait_for(lambda: node.state.connected, 60)):
@@ -133,9 +131,7 @@ def main():
     finally:
         node.destroy_node()
         rclpy.shutdown()
-
-    print("TEST DE FUMÉE :", "OK" if all(steps) else "ÉCHEC")
-    return 0 if all(steps) else 1
+    return step.fin()
 
 
 if __name__ == "__main__":

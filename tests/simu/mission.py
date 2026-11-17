@@ -4,17 +4,16 @@ Deux cycles : takeoff (1 m au lidar) -> attente stable 5 s -> land (désarmé). 
 que les missions repartent du début à chaque demande. Pendant l'attente du 1er cycle, le drone est
 au-dessus de l'ArUco 0 (au sol) : sa pose (nœud aruco) doit donner la hauteur du lidar.
 
-Prérequis : simu lancée avec le code du drone (docker compose --profile drone up -d), drone au
-départ sur l'ArUco 0 (sim/scripts/reset_drone.sh : il atterrit là où il est et dérive d'un test à l'autre).
-Usage : docker compose exec companion bash -lc 'python3 sim/scripts/mission_test.py'
+Lancement : python3 tests/run.py mission, qui prépare la simu. À la main : simu lancée avec le code du
+drone (docker compose --profile drone up -d), drone au départ sur l'ArUco 0 (sim/scripts/reset_drone.sh :
+il atterrit là où il est et dérive d'un test à l'autre), puis
+docker compose exec companion bash -lc 'python3 tests/simu/mission.py'
 Code de sortie 0 si tout est OK, 1 sinon.
 """
-import json
 import sys
 import time
 
 import numpy as np
-import paho.mqtt.client as mqtt
 import rclpy
 from mavros_msgs.msg import State
 from rclpy.node import Node
@@ -23,7 +22,8 @@ from sensor_msgs.msg import Range
 from std_msgs.msg import String
 from vision_msgs.msg import Detection3DArray
 
-BROKER = ('127.0.0.1', 1883)
+from commun import ClientMqtt, Etapes
+
 TAKEOFF_ALT = 1.0      # = takeoff_altitude de drone.yaml
 ALT_TOLERANCE = 0.2    # m
 HOLD_TIME = 5.0        # s en attente
@@ -40,7 +40,6 @@ class MissionTest(Node):
         self.state = State()
         self.height = None
         self.mission_state = ''
-        self.telemetry = None
         self.aruco = None
         self.create_subscription(State, '/mavros/state', self._on_state, 10)
         self.create_subscription(Range, '/mavros/rangefinder/rangefinder', self._on_range,
@@ -50,11 +49,7 @@ class MissionTest(Node):
         latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(String, '/mission/state', self._on_mission, latched)
 
-        self.mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, 'mission_test')
-        self.mqtt.on_message = self._on_mqtt
-        self.mqtt.connect(*BROKER)
-        self.mqtt.subscribe([('drone/telemetry', 0), ('drone/logs', 0)])
-        self.mqtt.loop_start()
+        self.mqtt = ClientMqtt('mission_test', afficher_mission=False)   # le drone vu du dashboard
 
     def _on_state(self, msg):
         self.state = msg
@@ -85,14 +80,16 @@ class MissionTest(Node):
             print(f'    état mission : {msg.data}', flush=True)
         self.mission_state = msg.data
 
-    def _on_mqtt(self, client, userdata, msg):
-        if msg.topic == 'drone/telemetry':
-            self.telemetry = json.loads(msg.payload)
-        else:
-            print(f'    log : {msg.payload.decode()}', flush=True)
+    @property
+    def telemetry(self):
+        return self.mqtt.telemetry
+
+    @property
+    def logs(self):
+        return self.mqtt.logs
 
     def set_mode(self, mode):
-        self.mqtt.publish('drone/cmd', json.dumps({'action': 'set_mode', 'mode': mode}))
+        self.mqtt.set_mode(mode)
 
     def wait_for(self, condition, timeout):
         deadline = time.monotonic() + timeout
@@ -119,12 +116,7 @@ class MissionTest(Node):
 def main():
     rclpy.init()
     node = MissionTest()
-    steps = []
-
-    def step(name, ok):
-        print(f"[{'OK' if ok else 'ÉCHEC'}] {name}", flush=True)
-        steps.append(ok)
-        return ok
+    step = Etapes('TEST DE MISSION')
 
     try:
         if not step('télémétrie MQTT du drone reçue', node.wait_for(lambda: node.telemetry is not None, 30)):
@@ -150,12 +142,11 @@ def main():
             node.set_mode('attente')
             node.wait_for(lambda: False, 5.0)   # ArduPilot refuse de réarmer juste après l'atterrissage
     finally:
-        node.mqtt.loop_stop()
+        node.mqtt.fermer()
         node.destroy_node()
         rclpy.shutdown()
 
-    print('TEST DE MISSION :', 'OK' if all(steps) else 'ÉCHEC')
-    return 0 if all(steps) else 1
+    return step.fin()
 
 
 if __name__ == '__main__':

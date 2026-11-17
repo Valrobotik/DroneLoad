@@ -14,3 +14,6 @@ __pycache__/
 drone/build/
 drone/install/
 drone/log/
+
+# Journaux du lanceur de tests (tests/run.py)
+tests/resultats/
