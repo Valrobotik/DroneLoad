@@ -78,7 +78,7 @@ BLEU = (0, 0.3, 1)
 VERT = (0, 0.7, 0.1)
 JAUNE = (1, 0.85, 0)
 Z_LIGNE = 0.003           # lignes au sol : boîtes de 2 mm d'épaisseur
-Z_ARUCO = 0.012           # mission_test.py en dépend (ARUCO_Z)
+Z_ARUCO = 0.012           # lue par tests/simu/mission.py (position_sdf de commun.py)
 
 
 def fmt(valeurs):
@@ -289,7 +289,7 @@ ENTETE = f"""<?xml version="1.0" ?>
       </link>
     </model>
 
-    <!-- Drone posé sur l'ArUco 0, face à la zone C (même pose dans sim/scripts/reset_drone.sh) -->
+    <!-- Drone posé sur l'ArUco 0, face à la zone C (pose lue par sim/scripts/reset_drone.sh et les tests) -->
     <include>
       <uri>model://droneload_drone</uri>
       <name>drone</name>

@@ -94,7 +94,7 @@ services:
     tty: true
 
   # Code du drone (paquets ROS 2 de drone/), comme sur la Pi mais avec sim:=true.
-  # Profil drone, pour ne pas gêner smoke_test.py qui pilote lui-même l'autopilote :
+  # Profil drone, pour ne pas gêner tests/simu/smoke.py qui pilote lui-même l'autopilote :
   #   docker compose --profile drone up -d
   # Relancé automatiquement après restart_script (dashboard), comme le ferait systemd sur la Pi.
   drone:

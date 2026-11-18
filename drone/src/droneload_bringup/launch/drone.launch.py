@@ -32,6 +32,7 @@ from launch_ros.actions import Node
 PC_IP = '192.168.31.181'        # PC de pilotage sur le réseau du drone
 SIM_PC_IP = 'host.docker.internal'
 RESPAWN_DELAY = 2.0             # s avant de relancer un nœud arrêté
+CODE_RESTART = 3                # sortie de mqtt_server sur restart_script (= CODE_RESTART de mqtt_server.py)
 REPO = Path(__file__).resolve().parents[4]   # drone/src/droneload_bringup/launch/ -> racine du repo
 MODEL = REPO / 'models' / 'best_ncnn_model'
 CALIBRATION = REPO / 'config' / 'camera' / 'module3_640x480.yaml'   # calibration de la caméra (camera_info)
@@ -70,7 +71,16 @@ def nodes(context):
         return Node(package=package, executable=executable, name=executable, output='screen',
                     parameters=common + [extra], respawn=respawn, respawn_delay=RESPAWN_DELAY)
 
-    mqtt_server = node('droneload_hardware', 'mqtt_server', respawn=False)
+    mqtt_server = node('droneload_hardware', 'mqtt_server')
+
+    def mqtt_server_arrete(event, _context):
+        # restart_script (dashboard, refusé drone armé) : tout le code s'arrête et le service le relance.
+        # Toute autre sortie (exception, processus tué) : mqtt_server seul est relancé (respawn), le reste
+        # (MAVROS, mission en cours) continue
+        if event.returncode == CODE_RESTART:
+            return [EmitEvent(event=Shutdown(reason='restart_script'))]
+        return None
+
     actions = [
         node('droneload_vol', 'main_node'),
         node('droneload_vision', 'vision', model_path=model),
@@ -78,9 +88,7 @@ def nodes(context):
         node('droneload_hardware', 'gstream', pc_ip=pc_ip),
         node('droneload_hardware', 'servo', mock=sim),
         mqtt_server,
-        # restart_script (dashboard) arrête mqtt_server : tout le code s'arrête et le service le relance
-        RegisterEventHandler(OnProcessExit(target_action=mqtt_server,
-                                           on_exit=[EmitEvent(event=Shutdown(reason='mqtt_server arrêté'))])),
+        RegisterEventHandler(OnProcessExit(target_action=mqtt_server, on_exit=mqtt_server_arrete)),
     ]
     if not sim:
         actions.append(node('droneload_hardware', 'camera', calibration_file=str(CALIBRATION)))

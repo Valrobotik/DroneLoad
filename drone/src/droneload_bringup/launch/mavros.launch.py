@@ -2,7 +2,7 @@
 
   Drone réel : inclus par drone.launch.py (fcu_url par défaut : port série de la Pi)
   Simulation : service mavros de sim/compose.yml, lancé par chemin (sans colcon build) :
-               ros2 launch drone/droneload_bringup/launch/mavros.launch.py fcu_url:=udp://:14550@
+               ros2 launch drone/src/droneload_bringup/launch/mavros.launch.py fcu_url:=udp://:14550@
 
 Toute modification de MAVROS (plugins, paramètres) se fait ici, pour être testée en simu.
 
@@ -58,8 +58,10 @@ def mavros(context):
                                           respawn=True, respawn_delay=ALERTE_PERIODE))
         return actions
     apm = Path(get_package_share_directory('mavros')) / 'launch' / 'apm.launch'
+    # respawn_mavros : MAVROS relancé s'il s'arrête (sinon plus aucune commande vers l'autopilote jusqu'à
+    # restart_script) ; il rouvre le même port série, vérifié libre au lancement
     return [IncludeLaunchDescription(AnyLaunchDescriptionSource(str(apm)),
-                                     launch_arguments={'fcu_url': fcu_url}.items())]
+                                     launch_arguments={'fcu_url': fcu_url, 'respawn_mavros': 'true'}.items())]
 
 
 def generate_launch_description():

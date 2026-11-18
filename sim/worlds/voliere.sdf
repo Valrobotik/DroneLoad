@@ -52,7 +52,7 @@
       </link>
     </model>
 
-    <!-- Drone posé sur l'ArUco 0, face à la zone C (même pose dans sim/scripts/reset_drone.sh) -->
+    <!-- Drone posé sur l'ArUco 0, face à la zone C (pose lue par sim/scripts/reset_drone.sh et les tests) -->
     <include>
       <uri>model://droneload_drone</uri>
       <name>drone</name>
