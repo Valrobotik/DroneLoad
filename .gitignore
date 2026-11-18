@@ -9,3 +9,11 @@ __pycache__/
 .idea/
 .vscode/
 .DS_Store
+
+# Workspace ROS 2 du drone (cd drone && colcon build)
+drone/build/
+drone/install/
+drone/log/
+
+# Journaux du lanceur de tests (tests/run.py)
+tests/resultats/

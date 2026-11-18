@@ -1,0 +1,2 @@
+# IP fixe de la Pi sur eth0 (câble direct vers le PC de pilotage)
+droneload_eth0_ip: 192.168.2.3/16

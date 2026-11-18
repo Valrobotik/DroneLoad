@@ -4,34 +4,36 @@ Code embarqué du drone de l'équipe Valrobotik pour le concours **DroneLoad** (
 
 ## Matériel
 
-- Châssis F450, Pixhawk 6C mini sous ArduPilot (Copter), sans GPS.
-- Raspberry Pi 5 sous Ubuntu, avec une caméra Pi (libcamera) montée sur un servo.
-- MTF-01 (flux optique + lidar), lu via MAVLink comme rangefinder.
-- Servos : GPIO 17 pour la caméra, GPIO 13 pour le crochet.
+- Châssis Tarot FY450, moteurs Holybro 2216 920 KV, hélices 1045, LiPo 3S 5000 mAh, Pixhawk 6C mini sous ArduPilot (Copter), sans GPS (seul le compas du M8N sert).
+- Raspberry Pi 5 sous Ubuntu 24.04 et ROS 2 Jazzy, avec une caméra Pi Module 3 (libcamera) fixe vers le sol.
+- MicoAir MTF-01P (flux optique + lidar), branché sur la Pixhawk, lu par ROS via MAVROS comme rangefinder.
+- Servo SG90 du crochet sur le GPIO 13.
+- Radio FrSky Taranis X9D Plus + RadioMaster Ranger Micro, récepteur ELRS RadioMaster Nano RP3.
+
+Références complètes, positions des capteurs et masse estimée : section « Matériel » de `docs/architecture.md`.
 
 ## Arborescence
 
 ```
-drone/               code embarqué (Raspberry Pi)
-  main.py            boucle principale cadencée par la caméra
-  config.py          IP, ports, MAVLink, caméra, chemin du modèle
-  mavlink.py         DroneController (pymavlink) + DummyDroneController
-  hardware.py        servos (gpiozero/lgpio)
-  video.py           capture libcamera + renvoi RTP/JPEG vers le PC
-  mqtt_server.py     commandes et télémétrie MQTT
-  tasks/             épreuves (machines à états, non bloquantes)
-  vision/            ArUco (pas encore branché)
-tools/               scripts autonomes (calibration caméra)
+drone/               code embarqué (Raspberry Pi) : workspace ROS 2, voir docs/architecture.md
+  src/               paquets ROS 2 :
+    droneload_bringup/  lancement (drone.launch.py) et paramètres (drone.yaml)
+    droneload_vol/      nœud principal, interface MAVROS, missions (décollage, atterrissage, épreuves)
+    droneload_vision/   détection YOLO (traitement d'image seulement)
+    droneload_hardware/ entrées/sorties : caméra, servo du crochet, flux vidéo vers le PC, serveur MQTT
+tools/               scripts autonomes (calibration caméra -> config/camera/)
 ground/              PC de pilotage : dashboard MQTT + lanceur (macOS, Linux, Windows)
   requirements.txt
-sim/                 simulation (Docker Compose) : monde Gazebo, modèle du drone, bridge, test de fumée
+sim/                 simulation (Docker Compose) : monde Gazebo, modèle du drone, bridge, outils (scripts/)
   docker/            Dockerfiles
+tests/               tests : run.py (lanceur), simu/ (de bout en bout dans la simu)
 config/              configuration des équipements
   ardupilot/         paramètres ArduPilot (communs réel/SITL + spécifiques SITL)
+  camera/            calibration de la caméra (générée par tools/calibration.py)
                      (à venir : elrs/, radio/)
 install/             installation Ansible des ordinateurs (Pi, images Docker, PC Linux) : voir install/README.md
 models/              modèle YOLO entraîné (best.pt + export NCNN)
-docs/                documentation (simulation)
+docs/                documentation (architecture ROS 2, simulation, tests)
 .github/             règles de contribution : contrôle des PR, hook et modèle de commit
 ```
 
@@ -83,13 +85,18 @@ Vérification : `gst-inspect-1.0 rtpjpegdepay` doit décrire l'élément.
 
 ## Lancement
 
-Sur le Pi, depuis la racine du repo :
+Sur la Pi, depuis la racine du repo (un broker MQTT tourne en local, installé par `install/`) :
 ```bash
-python -m drone                 # vol réel : MAVLink sur /dev/ttyAMA0 @ 921600
-python -m drone --sim           # SITL : udp:127.0.0.1:14550
-python -m drone --no-pixhawk    # vision seule, aucune commande MAVLink
-python -m drone --pc-ip 192.168.2.9   # change la destination du flux vidéo
+cd drone && colcon build --symlink-install && cd ..     # après chaque modification de setup.py, du launch ou de drone.yaml
+ros2 launch droneload_bringup drone.launch.py                       # vol réel : MAVROS sur /dev/ttyAMA0 @ 921600
+ros2 launch droneload_bringup drone.launch.py vision_only:=true     # vision seule, sans Pixhawk
+ros2 launch droneload_bringup drone.launch.py pc_ip:=192.168.2.9    # change la destination du flux vidéo
 ```
+Nœuds, topics et arguments : [docs/architecture.md](docs/architecture.md).
+
+**Sur la Pi, le code du drone tourne déjà** : le service systemd `droneload` le lance au démarrage et le relance s'il s'arrête. Avant de le lancer à la main, toujours `sudo systemctl stop droneload` (et `sudo systemctl start droneload` après) : deux lancements, c'est deux `main_node` qui pilotent le même drone et deux MAVROS sur `/dev/ttyAMA0` dont aucun ne voit la Pixhawk. Le launch refuse donc de démarrer s'il tourne déjà (verrou `/tmp/droneload-drone.lock`), et refuse de démarrer MAVROS si le port série est déjà ouvert par un autre programme, absent ou inaccessible (signalé toutes les 10 s sur le dashboard). Caméra ou crochet indisponibles : signalés sur le dashboard (`CAM` à 0 images/s, `CROCHET: HS`), nouvel essai toutes les 5 s. Logs du service : `journalctl -u droneload -f`.
+
+**Après chaque redémarrage**, le dashboard affiche un bilan au bout de 20 s (`Démarrage : FCU OK ..., caméra 15/s, IA 6/s, crochet OK, install OK`) ; ce qui manque est en majuscules. Redémarrer la Pi ne redémarre pas la Pixhawk (alimentée à part) : `[P]` dans le dashboard la redémarre. `install/check.py` signale aussi tout ce qui se lance tout seul hors d'`install/` (service, crontab, `.bashrc`...). **Éteindre** : bouton de la Pi 5, appui court (arrêt propre ; appui long = coupure forcée), ou `[X]` dans le dashboard.
 
 Sur le PC, depuis la racine du repo :
 ```bash
@@ -97,15 +104,20 @@ Sur le PC, depuis la racine du repo :
 ```
 Le script ouvre la fenêtre vidéo GStreamer (UDP 5000) et lance le dashboard dans le terminal. Sur macOS, `ground/dashboard.command` fait la même chose en double-clic.
 
-Les valeurs par défaut (IP, ports, résolution, modèle) sont dans `drone/config.py`.
+Les réglages du drone (hauteur de décollage, résolution, ports, broker) sont dans `drone/src/droneload_bringup/config/drone.yaml`.
 
 ## Simulation
 
 ArduPilot SITL + Gazebo + ROS 2 dans Docker, identique sur Mac et Linux. Voir [docs/simulation.md](docs/simulation.md).
 ```bash
 cd sim
-docker compose up -d
-docker compose exec companion bash -lc 'python3 sim/scripts/smoke_test.py'
+docker compose --profile drone up -d          # simu + code du drone
+```
+
+Tests (dans `tests/`, hors du code du drone) : le lanceur prépare la simu pour chacun (code du drone ou non, remise au départ) et fait le bilan. Voir [docs/tests.md](docs/tests.md) (ce que vérifie chaque test, comment en écrire un).
+```bash
+python3 tests/run.py --liste      # tests et suites
+python3 tests/run.py mission      # un test ; suites : base, tout
 ```
 
 ## Protocole MQTT
@@ -113,9 +125,9 @@ docker compose exec companion bash -lc 'python3 sim/scripts/smoke_test.py'
 | Topic | Sens | Contenu |
 |---|---|---|
 | `drone/cmd` | PC → Pi | `{"action": "set_mode", "mode": "attente\|takeoff\|land\|epreuve1\|epreuve2"}`, `{"action": "set_class", "class_name": "cow"}`, `{"action": "set_hook", "state": "hook_open\|hook_close"}`, `{"action": "arm"}`, `{"action": "disarm"}` |
-| `drone/system` | PC → Pi | `{"action": "reboot\|restart_script\|shutdown"}` |
+| `drone/system` | PC → Pi | `{"action": "reboot\|restart_script\|shutdown\|reboot_fcu"}` (`reboot_fcu` : redémarre la Pixhawk ; tout est refusé drone armé) |
 | `drone/logs` | Pi → PC | texte |
-| `drone/telemetry` | Pi → PC | JSON envoyé chaque seconde (fps, cpu, ram, mode, batterie, état de l'ESP32) |
+| `drone/telemetry` | Pi → PC | JSON envoyé chaque seconde (images/s de la caméra et de la vision, crochet utilisable, cpu, température, ram, mode demandé et état réel de la mission, autopilote armé et mode, hauteur lidar, batterie, état de l'ESP32) |
 | `robot/ping` | ESP32 → Pi | heartbeat ; l'ESP32 est considéré déconnecté après 4 s sans ping |
 
 ## Contribuer

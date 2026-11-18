@@ -65,17 +65,19 @@ services:
     volumes:
       - ../config:/workspace/config:ro
     init: true
+    # Chemin complet : un redémarrage demandé par MAVLink (reboot_fcu) relance le binaire par argv[0]
     command: >
-      arducopter --model JSON --sim-address 127.0.0.1 --speedup 1 -I0 -w
+      /usr/local/bin/arducopter --model JSON --sim-address 127.0.0.1 --speedup 1 -I0 -w
       --home 45.7838,4.8722,170,0
-      --defaults /opt/ardupilot/params/copter.parm,/workspace/config/ardupilot/drone.parm,/workspace/config/ardupilot/sitl.parm
+      --defaults /opt/ardupilot/params/copter.parm,/workspace/config/ardupilot/pixhawk.param${PARAM_SURCOUCHE:+,/workspace/config/ardupilot/${PARAM_SURCOUCHE}.param},/workspace/config/ardupilot/sitl.parm
       --serial0 tcp:0
       --serial1 udpclient:127.0.0.1:14550
 
-  # Liaison ROS 2 <-> autopilote. Sur le drone : fcu_url:=/dev/ttyAMA0:921600
+  # Liaison ROS 2 <-> autopilote : même launch que sur le drone (lancé par chemin, sans colcon build),
+  # seule l'adresse de l'autopilote change (sur le drone : port série /dev/ttyAMA0:921600).
   mavros:
     <<: *ros
-    command: ros2 launch mavros apm.launch fcu_url:=udp://:14550@
+    command: ros2 launch /workspace/drone/src/droneload_bringup/launch/mavros.launch.py fcu_url:=udp://:14550@
 
   # Capteurs simulés Gazebo -> topics ROS 2 (sur le drone : nœuds drivers)
   bridge:
@@ -90,6 +92,20 @@ services:
     command: sleep infinity
     stdin_open: true
     tty: true
+
+  # Code du drone (paquets ROS 2 de drone/), comme sur la Pi mais avec sim:=true.
+  # Profil drone, pour ne pas gêner tests/simu/smoke.py qui pilote lui-même l'autopilote :
+  #   docker compose --profile drone up -d
+  # Relancé automatiquement après restart_script (dashboard), comme le ferait systemd sur la Pi.
+  drone:
+    <<: *ros
+    profiles: [drone]
+    depends_on: [gz-server, mavros, bridge, mqtt]
+    restart: unless-stopped
+    command: >
+      bash -lc 'cd drone && colcon build --symlink-install
+      && . install/setup.bash
+      && exec ros2 launch droneload_bringup drone.launch.py sim:=true pc_ip:=$${PC_IP:-host.docker.internal}'
 
   # Broker MQTT, même rôle que le mosquitto de la Pi (dashboard.py --broker localhost)
   mqtt:

@@ -1,0 +1,168 @@
+"""Test de mission de bout en bout : commandes MQTT comme le dashboard, contrôle par ROS 2.
+
+Deux cycles : takeoff (1 m au lidar) -> attente stable 5 s -> land (désarmé). Le 2e cycle vérifie
+que les missions repartent du début à chaque demande. Pendant l'attente du 1er cycle, le drone est
+au-dessus de l'ArUco 0 (au sol) : sa pose (nœud aruco) doit donner la hauteur du lidar.
+
+Seule la radio passe en GUIDED (FLTMODE_GCSBLOCK) : le pilote est simulé (Radio de commun.py). Au 1er
+cycle, takeoff attend la radio sans armer ; en vol, le pilote reprend la main en FlowHold et land est
+refusé (la Pi ne passe en LAND que depuis GUIDED), puis il rend la main en GUIDED.
+
+Lancement : python3 tests/run.py mission, qui prépare la simu. À la main : simu lancée avec le code du
+drone (docker compose --profile drone up -d), drone au départ sur l'ArUco 0 (sim/scripts/reset_drone.sh :
+il atterrit là où il est et dérive d'un test à l'autre), puis
+docker compose exec companion bash -lc 'python3 tests/simu/mission.py'
+Code de sortie 0 si tout est OK, 1 sinon.
+"""
+import sys
+import time
+
+import numpy as np
+import rclpy
+from mavros_msgs.msg import State
+from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, qos_profile_sensor_data
+from sensor_msgs.msg import Range
+from std_msgs.msg import String
+from vision_msgs.msg import Detection3DArray
+
+from commun import TAKEOFF_ALT, ClientMqtt, Etapes, Radio, attendre, position_sdf
+
+ALT_TOLERANCE = 0.2    # m
+HOLD_TIME = 5.0        # s en attente
+CYCLES = 2
+ARUCO_ID = '0'           # ArUco au sol sous le drone au départ
+ARUCO_Z = position_sdf('aruco_0')[2]   # m, hauteur du marqueur au-dessus du sol, lue dans sim/worlds/voliere.sdf
+ARUCO_TOLERANCE = 0.05   # m, écart toléré entre la distance au marqueur et la hauteur lidar
+ARUCO_MAX_OFFSET = 0.25  # m, décalage horizontal maximal (le marqueur sort du champ au-delà)
+
+
+class MissionTest(Node):
+    def __init__(self):
+        super().__init__('mission_test')
+        self.state = State()
+        self.height = None
+        self.mission_state = ''
+        self.aruco = None
+        self.create_subscription(State, '/mavros/state', self._on_state, 10)
+        self.create_subscription(Range, '/mavros/rangefinder/rangefinder', self._on_range,
+                                 qos_profile_sensor_data)
+        self.create_subscription(Detection3DArray, '/aruco/detections', self._on_aruco,
+                                 qos_profile_sensor_data)
+        latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(String, '/mission/state', self._on_mission, latched)
+
+        self.mqtt = ClientMqtt('mission_test', afficher_mission=False)   # le drone vu du dashboard
+
+    def _on_state(self, msg):
+        self.state = msg
+
+    def _on_range(self, msg):
+        self.height = msg.range
+
+    def _on_aruco(self, msg):
+        for det in msg.detections:
+            if det.results[0].hypothesis.class_id == ARUCO_ID:
+                self.aruco = det.results[0].pose.pose.position
+
+    def aruco_matches_lidar(self):
+        """ArUco 0 vu, à la distance attendue d'après le lidar, à peu près sous le drone."""
+        self.aruco = None
+        self.wait_for(lambda: self.aruco is not None, 3.0)
+        if self.aruco is None or self.height is None:
+            print('    ArUco 0 non vu', flush=True)
+            return False
+        p = self.aruco
+        expected = self.height - ARUCO_Z
+        print(f'    ArUco 0 : x {p.x:+.3f} y {p.y:+.3f} z {p.z:.3f} m '
+              f'(attendu z ≈ {expected:.3f} m d\'après le lidar)', flush=True)
+        return abs(p.z - expected) < ARUCO_TOLERANCE and np.hypot(p.x, p.y) < ARUCO_MAX_OFFSET
+
+    def _on_mission(self, msg):
+        if msg.data != self.mission_state:
+            print(f'    état mission : {msg.data}', flush=True)
+        self.mission_state = msg.data
+
+    @property
+    def telemetry(self):
+        return self.mqtt.telemetry
+
+    @property
+    def logs(self):
+        return self.mqtt.logs
+
+    def set_mode(self, mode):
+        self.mqtt.set_mode(mode)
+
+    def wait_for(self, condition, timeout):
+        """Fait tourner le nœud jusqu'à ce que condition() soit vraie ; False si timeout."""
+        return attendre(condition, timeout, spin=lambda: rclpy.spin_once(self, timeout_sec=0.1))
+
+    def at_alt(self):
+        return self.height is not None and abs(self.height - TAKEOFF_ALT) < ALT_TOLERANCE
+
+    def holds_alt(self, duration):
+        start = time.monotonic()
+        if self.wait_for(lambda: not (self.state.armed and self.at_alt()), duration):
+            print(f'    hauteur {self.height} m après {time.monotonic() - start:.1f} s, '
+                  f'armé : {self.state.armed}, mode : {self.state.mode}', flush=True)
+            return False
+        return True
+
+
+def main():
+    rclpy.init()
+    node = MissionTest()
+    radio = Radio()
+    step = Etapes('TEST DE MISSION')
+
+    try:
+        if not step('télémétrie MQTT du drone reçue', node.wait_for(lambda: node.telemetry is not None, 30)):
+            return 1
+        if not step('MAVROS connecté', node.wait_for(lambda: node.state.connected, 60)):
+            return 1
+        step('vision active (fps > 0 dans la télémétrie)',
+             node.wait_for(lambda: node.telemetry['fps'] > 0, 60))
+        for cycle in range(1, CYCLES + 1):
+            node.set_mode('takeoff')
+            if cycle == 1:
+                step('takeoff attend la radio en GUIDED, sans armer',
+                     node.wait_for(lambda: node.mission_state == 'takeoff:ATTENTE_GUIDED', 5.0)
+                     and not node.wait_for(lambda: node.state.armed or node.state.mode == 'GUIDED', 3.0))
+            radio.guided()
+            if not step(f'cycle {cycle} : décollage à {TAKEOFF_ALT} m',
+                        node.wait_for(lambda: node.state.armed and node.at_alt(), 150)):
+                return 1
+            node.wait_for(lambda: False, 3.0)   # le drone dépasse un peu la cible avant de se stabiliser
+            node.set_mode('attente')
+            step(f'cycle {cycle} : attente stable {HOLD_TIME:.0f} s', node.holds_alt(HOLD_TIME))
+            if cycle == 1:
+                step('ArUco 0 : pose 3D cohérente avec le lidar', node.aruco_matches_lidar())
+                # Le pilote reprend la main (FlowHold, gaz au neutre : hauteur tenue) : land refusé
+                radio.envoyer('flowhold', gaz=1500)
+                # MAVROS ne connaît pas toujours le nom de FlowHold (CMODE(22)) : « ni GUIDED ni LAND » suffit
+                pilote = lambda: node.state.mode not in ('GUIDED', 'LAND')
+                node.wait_for(pilote, 5.0)
+                node.set_mode('land')
+                step('land refusé hors GUIDED (pilote aux commandes)',
+                     node.wait_for(lambda: node.mission_state == 'land:REFUSE', 5.0)
+                     and not node.wait_for(lambda: not pilote(), 2.0) and node.state.armed)
+                radio.guided()   # le pilote rend la main
+                node.wait_for(lambda: node.state.mode == 'GUIDED', 5.0)
+            node.set_mode('land')
+            if not step(f'cycle {cycle} : atterrissage et désarmement',
+                        node.wait_for(lambda: not node.state.armed, 60)):
+                return 1
+            node.set_mode('attente')
+            node.wait_for(lambda: False, 5.0)   # ArduPilot refuse de réarmer juste après l'atterrissage
+    finally:
+        radio.fermer()
+        node.mqtt.fermer()
+        node.destroy_node()
+        rclpy.shutdown()
+
+    return step.fin()
+
+
+if __name__ == '__main__':
+    sys.exit(main())

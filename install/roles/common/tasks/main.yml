@@ -1,4 +1,4 @@
-# Socle commun à tous les environnements : ROS 2, MAVROS, Foxglove bridge, venv Python.
+# Socle commun à tous les environnements : ROS 2, MAVROS, Foxglove bridge, venv Python (YOLO, MQTT).
 
 - name: Dossier d'état DroneLoad
   ansible.builtin.file:
@@ -46,6 +46,18 @@
   become: false
   changed_when: false
 
+# Sur arm64, le torch de PyPI (tiré par ultralytics) embarque CUDA : plusieurs Go inutiles
+# (Pi, Mac). Installé avant ultralytics, qui le considère alors comme satisfait.
+- name: PyTorch CPU
+  ansible.builtin.pip:
+    name:
+      - torch==2.15.0
+      - torchvision==0.29.2
+    extra_args: --index-url https://download.pytorch.org/whl/cpu
+    virtualenv: "{{ droneload_venv }}"
+    virtualenv_command: python3 -m venv
+    virtualenv_site_packages: true
+
 - name: Paquets pip communs dans le venv, qui voit rclpy et OpenCV système (section commun)
   ansible.builtin.pip:
     name: "{{ commun.pip }}"
@@ -53,12 +65,41 @@
     virtualenv_command: python3 -m venv
     virtualenv_site_packages: true
 
+# ultralytics tire opencv-python (pip, sans GStreamer), qui masquerait python3-opencv (apt)
+- name: Retrait d'opencv-python du venv (OpenCV système avec GStreamer)
+  ansible.builtin.pip:
+    name:
+      - opencv-python
+      - opencv-python-headless
+    state: absent
+    virtualenv: "{{ droneload_venv }}"
+
+- name: Vérification de l'OpenCV système dans le venv (GStreamer, NumPy compatible)
+  ansible.builtin.command: >-
+    {{ droneload_venv }}/bin/python -c
+    "import re, cv2; assert re.search(r'GStreamer:\s+YES', cv2.getBuildInformation()), cv2.__file__"
+  changed_when: false
+
+# colcon lancé par le Python du venv : les nœuds du drone (#!python) voient alors les paquets du venv
+# (ultralytics, paho-mqtt). Le venv est en tête du PATH, donc `colcon build` passe par ici.
+- name: colcon du venv
+  ansible.builtin.copy:
+    dest: "{{ droneload_venv }}/bin/colcon"
+    content: |
+      #!/bin/sh
+      exec {{ droneload_venv }}/bin/python3 -m colcon "$@"
+    mode: "0755"
+
 - name: Environnement ROS 2 dans tous les shells
   ansible.builtin.copy:
     dest: /etc/profile.d/droneload.sh
     content: |
       . /opt/ros/{{ ros_distro }}/setup.sh
       export PATH={{ droneload_venv }}/bin:$PATH
+      # Paquets ROS 2 du drone, une fois construits (cd drone && colcon build --symlink-install)
+      if [ -f {{ droneload_repo }}/drone/install/setup.sh ]; then
+        . {{ droneload_repo }}/drone/install/setup.sh
+      fi
     mode: "0644"
 
 - name: Environnement ROS 2 dans les shells interactifs non-login

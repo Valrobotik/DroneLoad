@@ -3,3 +3,7 @@
     name: mosquitto
     state: restarted
   when: systemd_actif.stat.exists | default(false)
+
+- name: Recharger udev
+  ansible.builtin.shell: udevadm control --reload && udevadm trigger --subsystem-match=gpio --subsystem-match=dma_heap
+  when: systemd_actif.stat.exists | default(false)
