@@ -4,6 +4,10 @@ Deux cycles : takeoff (1 m au lidar) -> attente stable 5 s -> land (désarmé). 
 que les missions repartent du début à chaque demande. Pendant l'attente du 1er cycle, le drone est
 au-dessus de l'ArUco 0 (au sol) : sa pose (nœud aruco) doit donner la hauteur du lidar.
 
+Seule la radio passe en GUIDED (FLTMODE_GCSBLOCK) : le pilote est simulé (Radio de commun.py). Au 1er
+cycle, takeoff attend la radio sans armer ; en vol, le pilote reprend la main en FlowHold et land est
+refusé (la Pi ne passe en LAND que depuis GUIDED), puis il rend la main en GUIDED.
+
 Lancement : python3 tests/run.py mission, qui prépare la simu. À la main : simu lancée avec le code du
 drone (docker compose --profile drone up -d), drone au départ sur l'ArUco 0 (sim/scripts/reset_drone.sh :
 il atterrit là où il est et dérive d'un test à l'autre), puis
@@ -22,14 +26,13 @@ from sensor_msgs.msg import Range
 from std_msgs.msg import String
 from vision_msgs.msg import Detection3DArray
 
-from commun import ClientMqtt, Etapes
+from commun import TAKEOFF_ALT, ClientMqtt, Etapes, Radio, attendre, position_sdf
 
-TAKEOFF_ALT = 1.0      # = takeoff_altitude de drone.yaml
 ALT_TOLERANCE = 0.2    # m
 HOLD_TIME = 5.0        # s en attente
 CYCLES = 2
-ARUCO_ID = '0'           # ArUco au sol sous le drone au départ (sim/worlds/voliere.sdf)
-ARUCO_Z = 0.012          # m, hauteur du marqueur au-dessus du sol
+ARUCO_ID = '0'           # ArUco au sol sous le drone au départ
+ARUCO_Z = position_sdf('aruco_0')[2]   # m, hauteur du marqueur au-dessus du sol, lue dans sim/worlds/voliere.sdf
 ARUCO_TOLERANCE = 0.05   # m, écart toléré entre la distance au marqueur et la hauteur lidar
 ARUCO_MAX_OFFSET = 0.25  # m, décalage horizontal maximal (le marqueur sort du champ au-delà)
 
@@ -92,30 +95,25 @@ class MissionTest(Node):
         self.mqtt.set_mode(mode)
 
     def wait_for(self, condition, timeout):
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            rclpy.spin_once(self, timeout_sec=0.1)
-            if condition():
-                return True
-        return False
+        """Fait tourner le nœud jusqu'à ce que condition() soit vraie ; False si timeout."""
+        return attendre(condition, timeout, spin=lambda: rclpy.spin_once(self, timeout_sec=0.1))
 
     def at_alt(self):
         return self.height is not None and abs(self.height - TAKEOFF_ALT) < ALT_TOLERANCE
 
     def holds_alt(self, duration):
         start = time.monotonic()
-        while time.monotonic() - start < duration:
-            rclpy.spin_once(self, timeout_sec=0.1)
-            if not (self.state.armed and self.at_alt()):
-                print(f'    hauteur {self.height:.2f} m après {time.monotonic() - start:.1f} s, '
-                      f'armé : {self.state.armed}, mode : {self.state.mode}', flush=True)
-                return False
+        if self.wait_for(lambda: not (self.state.armed and self.at_alt()), duration):
+            print(f'    hauteur {self.height} m après {time.monotonic() - start:.1f} s, '
+                  f'armé : {self.state.armed}, mode : {self.state.mode}', flush=True)
+            return False
         return True
 
 
 def main():
     rclpy.init()
     node = MissionTest()
+    radio = Radio()
     step = Etapes('TEST DE MISSION')
 
     try:
@@ -127,6 +125,11 @@ def main():
              node.wait_for(lambda: node.telemetry['fps'] > 0, 60))
         for cycle in range(1, CYCLES + 1):
             node.set_mode('takeoff')
+            if cycle == 1:
+                step('takeoff attend la radio en GUIDED, sans armer',
+                     node.wait_for(lambda: node.mission_state == 'takeoff:ATTENTE_GUIDED', 5.0)
+                     and not node.wait_for(lambda: node.state.armed or node.state.mode == 'GUIDED', 3.0))
+            radio.guided()
             if not step(f'cycle {cycle} : décollage à {TAKEOFF_ALT} m',
                         node.wait_for(lambda: node.state.armed and node.at_alt(), 150)):
                 return 1
@@ -135,6 +138,17 @@ def main():
             step(f'cycle {cycle} : attente stable {HOLD_TIME:.0f} s', node.holds_alt(HOLD_TIME))
             if cycle == 1:
                 step('ArUco 0 : pose 3D cohérente avec le lidar', node.aruco_matches_lidar())
+                # Le pilote reprend la main (FlowHold, gaz au neutre : hauteur tenue) : land refusé
+                radio.envoyer('flowhold', gaz=1500)
+                # MAVROS ne connaît pas toujours le nom de FlowHold (CMODE(22)) : « ni GUIDED ni LAND » suffit
+                pilote = lambda: node.state.mode not in ('GUIDED', 'LAND')
+                node.wait_for(pilote, 5.0)
+                node.set_mode('land')
+                step('land refusé hors GUIDED (pilote aux commandes)',
+                     node.wait_for(lambda: node.mission_state == 'land:REFUSE', 5.0)
+                     and not node.wait_for(lambda: not pilote(), 2.0) and node.state.armed)
+                radio.guided()   # le pilote rend la main
+                node.wait_for(lambda: node.state.mode == 'GUIDED', 5.0)
             node.set_mode('land')
             if not step(f'cycle {cycle} : atterrissage et désarmement',
                         node.wait_for(lambda: not node.state.armed, 60)):
@@ -142,6 +156,7 @@ def main():
             node.set_mode('attente')
             node.wait_for(lambda: False, 5.0)   # ArduPilot refuse de réarmer juste après l'atterrissage
     finally:
+        radio.fermer()
         node.mqtt.fermer()
         node.destroy_node()
         rclpy.shutdown()

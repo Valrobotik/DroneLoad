@@ -140,7 +140,7 @@ Sur Mac, les ports publiés sont les mêmes : une seule simu à la fois par mach
 
 ## Dépannage
 
-- **Remettre le drone au départ** : le monde n'est pas réinitialisé entre deux vols. Drone posé et désarmé, `./scripts/reset_drone.sh` (depuis `sim/`) le replace sur l'ArUco 0 et redémarre le SITL (prêt à armer ~30 s plus tard). Pour tout remettre à zéro : `docker compose down && docker compose up -d`. Ne jamais redémarrer `gz-server` seul : les autres services partagent son réseau (`network_mode: service:gz-server`) et perdent alors tous les topics.
+- **Remettre le drone au départ** : le monde n'est pas réinitialisé entre deux vols. Drone posé et désarmé, `./scripts/reset_drone.sh` (depuis `sim/`) le replace sur l'ArUco 0 (pose de l'`<include>` du drone, lue dans `worlds/voliere.sdf`) et redémarre le SITL (prêt à armer ~30 s plus tard). Pour tout remettre à zéro : `docker compose down && docker compose up -d`. Ne jamais redémarrer `gz-server` seul : les autres services partagent son réseau (`network_mode: service:gz-server`) et perdent alors tous les topics.
 
 - **`docker compose build` échoue sur le SITL** : vérifier que `ARDUPILOT_TAG` existe (`git ls-remote --tags https://github.com/ArduPilot/ardupilot.git | grep Copter-`).
 - **Le test de fumée reste bloqué à l'armement** : `docker compose logs sitl` et, dans QGC, les messages de pré-armement.

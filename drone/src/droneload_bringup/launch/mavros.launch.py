@@ -58,8 +58,10 @@ def mavros(context):
                                           respawn=True, respawn_delay=ALERTE_PERIODE))
         return actions
     apm = Path(get_package_share_directory('mavros')) / 'launch' / 'apm.launch'
+    # respawn_mavros : MAVROS relancé s'il s'arrête (sinon plus aucune commande vers l'autopilote jusqu'à
+    # restart_script) ; il rouvre le même port série, vérifié libre au lancement
     return [IncludeLaunchDescription(AnyLaunchDescriptionSource(str(apm)),
-                                     launch_arguments={'fcu_url': fcu_url}.items())]
+                                     launch_arguments={'fcu_url': fcu_url, 'respawn_mavros': 'true'}.items())]
 
 
 def generate_launch_description():

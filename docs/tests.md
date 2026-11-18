@@ -43,8 +43,8 @@ Pour regarder un test dans la vue 3D : lancer d'abord la simu à la main avec `-
 
 | Test | Vérifie | Simu | Durée |
 |---|---|---|---|
-| `smoke` | autopilote seul : MAVROS, caméras, lidar, GUIDED et armement, décollage à 1 m, 5 s de stationnaire, atterrissage. Ne teste pas le code de `drone/` | sans le code du drone | 1 min |
-| `mission` | 2 cycles décollage / attente stable 5 s / atterrissage commandés par MQTT comme le dashboard ; pose 3D de l'ArUco 0 cohérente avec le lidar | code du drone | 1,5 min |
+| `smoke` | autopilote seul : MAVROS, caméras, lidar, GUIDED refusé par MAVLink (`FLTMODE_GCSBLOCK`), GUIDED à la radio simulée et armement, décollage à 1 m, 5 s de stationnaire, atterrissage. Ne teste pas le code de `drone/` | sans le code du drone | 1 min |
+| `mission` | 2 cycles décollage / attente stable 5 s / atterrissage commandés par MQTT comme le dashboard, GUIDED à la radio simulée ; `takeoff` attend GUIDED sans armer ; `land` refusé quand le pilote a repris la main (FlowHold) ; pose 3D de l'ArUco 0 cohérente avec le lidar | code du drone | 1,5 min |
 
 Suites : `base` (smoke, mission), `tout` (tous les tests).
 
@@ -72,7 +72,8 @@ docker compose exec companion bash -lc 'python3 tests/simu/mission.py'
 2. Utiliser `tests/simu/commun.py` :
    - `Etapes('TEST DE ...')` : `etape(nom, ok)` affiche `[OK]` / `[ÉCHEC]`, `etape.fin()` affiche le verdict et renvoie le code de sortie ;
    - `ClientMqtt(nom)` : le drone vu du dashboard (`telemetry`, `logs`, `set_mode`, `commande`, `attendre`, `heure_log`) ;
-   - `depart_sdf()` (départ du drone lu dans le monde Gazebo), `ros2(...)` ;
+   - `Radio()` : radio du pilote simulée (voies RC envoyées à l'entrée RC du SITL, UDP 5501) : `guided()` met l'interrupteur de modes sur GUIDED (seule façon d'y passer, `FLTMODE_GCSBLOCK`), `envoyer('flowhold', gaz=1500)` simule une reprise en main ; à appeler avant tout décollage, après chaque remise au départ (le SITL redémarré oublie les voies) ;
+   - `depart_sdf()` (départ du drone lu dans le monde Gazebo), `position_sdf('aruco_0')` (position d'un visuel du monde), `ros2(...)` : lire les cotes dans `sim/worlds/voliere.sdf` plutôt que les recopier dans le test ;
    - toujours `atterrir_si_arme()` dans un `finally` : un test interrompu ne laisse jamais le drone en vol.
 3. Piloter le drone comme le dashboard (MQTT : `set_mode`…) plutôt qu'en envoyant des consignes à MAVROS : on teste le vrai code du drone.
 4. Une ligne dans la table `TESTS` de `tests/run.py` : commande, conteneur, code du drone requis ou non, remise au départ ; et l'ajouter à une suite.

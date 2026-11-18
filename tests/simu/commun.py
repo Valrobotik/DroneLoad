@@ -5,6 +5,8 @@ Lancés dans un conteneur de la simu (companion ou drone), par tests/run.py ou �
 Le dossier du script est dans sys.path : `from commun import ...` suffit. Écrire un test : docs/tests.md.
 """
 import json
+import socket
+import struct
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -63,6 +65,19 @@ def depart_sdf(sdf=SDF):
     raise RuntimeError(f'pas de drone dans {sdf}')
 
 
+def position_sdf(visuel, sdf=SDF):
+    """Position (x, y, z) d'un visuel du monde Gazebo (ex. 'aruco_0'), dans le repère du monde : celle du
+    visuel plus la position de son modèle (rotation du modèle ignorée : les visuels cherchés sont au sol,
+    dans des modèles non tournés)."""
+    for modele in ET.parse(sdf).getroot().find('world').findall('model'):
+        for v in modele.iter('visual'):
+            if v.get('name') == visuel:
+                pv = [float(c) for c in v.findtext('pose', '0 0 0').split()[:3]]
+                pm = [float(c) for c in modele.findtext('pose', '0 0 0').split()[:3]]
+                return tuple(a + b for a, b in zip(pv, pm))
+    raise RuntimeError(f'pas de visuel {visuel} dans {sdf}')
+
+
 def ros2(*args, timeout=30, essais=3):
     """Commande ros2 (CLI) ; vrai si elle a réussi dans le temps imparti. Réessayée : au premier appel dans un
     conteneur, la découverte des nœuds peut ne pas être finie (« Node not found »)."""
@@ -74,6 +89,42 @@ def ros2(*args, timeout=30, essais=3):
             pass
         time.sleep(1.0)
     return False
+
+
+class Radio:
+    """Radio du pilote simulée : voies RC envoyées à l'entrée RC du SITL (UDP 5501, 16 voies en µs), qui les
+    traite comme un vrai récepteur. Seule la radio passe en GUIDED (FLTMODE_GCSBLOCK de pixhawk.param) : les
+    tests qui décollent l'utilisent comme le ferait le pilote. Le SITL garde les dernières valeurs reçues
+    jusqu'à son redémarrage (sim/scripts/reset_drone.sh le redémarre : valeurs par défaut du SITL).
+
+    Voies (pixhawk.param, interieur.param) : 3 gaz, 6 modes (FLTMODE_CH), 8 kill motor (RC8_OPTION 31,
+    haut = moteurs coupés : laissé bas, relâché).
+    """
+    ADRESSE = ('127.0.0.1', 5501)
+    MODES = {'stabilize': 1000, 'flowhold': 1500, 'guided': 1800}   # positions 1, 4 et 6 de la voie 6
+    DEBOUNCE = 0.5   # s : ArduPilot ne change de mode que sur une position stable
+
+    def __init__(self):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.mode = None   # dernière position envoyée (None : valeurs par défaut du SITL)
+
+    def envoyer(self, mode, gaz=1000):
+        voies = [1500, 1500, gaz, 1500, 1800, self.MODES[mode], 1000, 1000] + [1000] * 8
+        # Plusieurs envois : UDP sans accusé, et la position doit rester stable le temps du debounce
+        for _ in range(5):
+            self.socket.sendto(struct.pack('<16H', *voies), self.ADRESSE)
+            time.sleep(self.DEBOUNCE / 5)
+        self.mode = mode
+
+    def guided(self):
+        """Interrupteur de modes sur GUIDED. ArduPilot ne change de mode qu'au changement de position :
+        déjà sur GUIDED (après un atterrissage en LAND, par exemple), il est rebasculé comme le ferait le pilote."""
+        if self.mode == 'guided':
+            self.envoyer('stabilize')
+        self.envoyer('guided')
+
+    def fermer(self):
+        self.socket.close()
 
 
 class ClientMqtt:
