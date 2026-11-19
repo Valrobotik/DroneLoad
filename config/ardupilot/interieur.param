@@ -18,8 +18,7 @@ EK3_SRC2_POSZ,1
 EK3_SRC2_VELXY,5
 EK3_SRC2_VELZ,0
 EK3_SRC2_YAW,1
-# Modes de la voie 6 : FlowHold (position 4) et Guided (position 6) au lieu de PosHold et Loiter (GPS)
+# Mode de la voie 6, position 4 : FlowHold au lieu de Loiter (GPS) ; Guided en position 6 partout (pixhawk.param)
 FLTMODE4,22
-FLTMODE6,4
 # Contrôles d'armement : tous sauf ceux du GPS (fix, configuration) ; ne jamais en sauter d'autres
 ARMING_SKIPCHK,1053192

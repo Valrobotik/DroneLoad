@@ -969,8 +969,10 @@
         <update_rate>15</update_rate>
         <always_on>1</always_on>
         <camera>
+          <!-- Profondeur D435 : 87° x 58°. Gazebo déduit le champ vertical du rapport de l'image :
+               848 x 480 (un mode de la D435) donne 87° x 56,5°, 640 x 480 donnait 71° de haut. -->
           <horizontal_fov>1.518</horizontal_fov>
-          <image><width>640</width><height>480</height></image>
+          <image><width>848</width><height>480</height></image>
           <clip><near>0.28</near><far>10</far></clip>
           <depth_camera><clip><near>0.28</near><far>10</far></clip></depth_camera>
           <noise><type>gaussian</type><mean>0</mean><stddev>0.007</stddev></noise>

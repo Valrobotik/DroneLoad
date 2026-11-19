@@ -44,6 +44,9 @@ HOOK_STATES = {'hook_open': True, 'hook_close': False}
 POSITION_MAX_AGE = 1.0   # s : au-delà, position_fiable n'est plus envoyée (null)
 BILAN_DELAY = 20.0    # s après le lancement : Pixhawk connectée, caméra ouverte, modèle chargé
 MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN = 246
+# Code de sortie de restart_script : seul arrêt de ce nœud qui arrête tout le code du drone (drone.launch.py).
+# Toute autre sortie (exception, processus tué) relance seulement ce nœud : MAVROS et la mission continuent.
+CODE_RESTART = 3
 REPO = Path(__file__).resolve().parents[4]   # --symlink-install : drone/src/<paquet>/<paquet>/ -> racine du repo
 
 
@@ -227,8 +230,8 @@ class MqttServer(Node):
     def _on_system(self, action):
         commands = {
             'reboot': ('!!! REDÉMARRAGE DU RASPBERRY PI !!!', lambda: os.system('sudo reboot')),
-            # Le launch s'arrête avec ce nœud ; le service (systemd ou Docker) le relance
-            'restart_script': ('Redémarrage du code du drone...', lambda: os._exit(1)),
+            # Le launch s'arrête sur ce code de sortie ; le service (systemd ou Docker) le relance
+            'restart_script': ('Redémarrage du code du drone...', lambda: os._exit(CODE_RESTART)),
             'shutdown': ('!!! EXTINCTION DU PI 5 !!!', lambda: os.system('sudo poweroff')),
             # La Pixhawk a sa propre alimentation : redémarrer la Pi ne la redémarre pas
             'reboot_fcu': ('Redémarrage de la Pixhawk...', self._reboot_fcu),

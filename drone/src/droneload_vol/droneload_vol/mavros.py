@@ -1,5 +1,8 @@
 """Interface vers l'autopilote (ArduPilot) via MAVROS : remplace l'ancien DroneController pymavlink.
 
+GUIDED ne s'obtient que par la radio (FLTMODE_GCSBLOCK de pixhawk.param) : la Pi n'y passe jamais
+elle-même. Elle ne passe en LAND que depuis GUIDED (land()).
+
 Aucune méthode ne bloque : les services MAVROS sont appelés en asynchrone et l'état du drone
 (mode, armement, distance lidar) est mis à jour par les callbacks. Les missions appellent ces
 méthodes à chaque tick et lisent le résultat aux ticks suivants.
@@ -50,6 +53,10 @@ SOURCES_EKF = {6: 'uwb', 3: 'gps'}   # 6 ExternalNav (UWB, position_ext), 3 GPS 
 VELOCITY_ONLY = (PositionTarget.IGNORE_PX | PositionTarget.IGNORE_PY | PositionTarget.IGNORE_PZ
                  | PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY | PositionTarget.IGNORE_AFZ
                  | PositionTarget.IGNORE_YAW)
+
+# Numéros des modes d'ArduCopter (custom_mode de HEARTBEAT) -> noms de MAVROS
+COPTER_MODES = {'0': 'STABILIZE', '2': 'ALT_HOLD', '4': 'GUIDED', '5': 'LOITER', '9': 'LAND',
+                '16': 'POSHOLD', '22': 'FLOWHOLD'}
 
 
 class MavrosDrone:
@@ -114,7 +121,14 @@ class MavrosDrone:
 
     @property
     def mode(self):
-        return self.state.mode
+        """Mode de l'autopilote, avec le nom ArduCopter même quand MAVROS ne l'a pas : il écrit CMODE(<n>)
+        tant qu'il ne connaît pas le type d'autopilote (~10 s après une (re)connexion) et toujours pour
+        les modes qu'il ignore (FlowHold = CMODE(22)). Sans ce nom, GUIDED passerait pour un autre mode
+        pendant ces 10 s (LAND refusé, décollage en attente)."""
+        mode = self.state.mode
+        if mode.startswith('CMODE(') and mode.endswith(')'):
+            return COPTER_MODES.get(mode[6:-1], mode)
+        return mode
 
     def get_current_alt_brute(self):
         """Distance lidar (m), ou None sans mesure valide récente (moins de ALT_MAX_AGE).
@@ -203,6 +217,12 @@ class MavrosDrone:
                    f'décollage à {altitude} m')
 
     def land(self):
+        """Mode LAND, seulement depuis GUIDED : dans un autre mode, le pilote a la main à la radio et la Pi
+        ne la lui reprend pas. GUIDED lui-même ne s'obtient que par la radio (FLTMODE_GCSBLOCK)."""
+        if self.mode != 'GUIDED':
+            self.log.warning(f'LAND refusé : autopilote en {self.mode or "?"}, pas en GUIDED (pilote aux commandes)',
+                             throttle_duration_sec=5.0)
+            return False
         return self.set_mode('LAND')
 
     @property
