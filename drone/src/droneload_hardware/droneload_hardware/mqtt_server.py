@@ -8,8 +8,8 @@ position_fiable dans la télémétrie) :
 - robot/ping : heartbeat de l'ESP32 (déconnecté après 4 s sans ping) ;
 - publiés : drone/logs (texte) et drone/telemetry (JSON, toutes les secondes) ;
 - carte (ground/carte.py) : drone/position (JSON, 5 Hz : position EKF, vérité Gazebo en simu, repère de
-  l'EKF), drone/carte (JSON retained, points de /carte/points : type, nom, x, y, z, cap en degrés ou null,
-  vues, age en s, taille [largeur, hauteur] en m), commandes reset_carte (vide la carte) et charger_carte (reprend la carte du lancement
+  l'EKF), drone/carte (JSON retained, /carte/json du nœud carte relayé tel quel : type, nom, x, y, z, cap en
+  degrés ou null, vues, age en s, taille [largeur, hauteur] en m), commandes reset_carte (vide la carte) et charger_carte (reprend la carte du lancement
   précédent) sur drone/cmd.
 
 Les logs des nœuds du drone (/rosout) sont aussi renvoyés sur drone/logs.
@@ -38,7 +38,6 @@ from rclpy.qos import QoSDurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, CameraInfo, Range
 from std_msgs.msg import Bool, Empty, String
 from vision_msgs.msg import Detection2DArray
-from visualization_msgs.msg import Marker, MarkerArray
 
 ESP_TIMEOUT = 4.0     # s sans ping avant de considérer l'ESP32 déconnecté
 HEIGHT_MAX_AGE = 1.0  # s : au-delà, la hauteur lidar n'est plus affichée
@@ -123,7 +122,7 @@ class MqttServer(Node):
         self.charger_carte_pub = self.create_publisher(Empty, '/carte/charger', 10)
         self.create_subscription(PoseStamped, '/mavros/local_position/pose', self._on_local_pose, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, '/sim/drone/pose', self._on_verite, qos_profile_sensor_data)
-        self.create_subscription(MarkerArray, '/carte/points', self._on_carte, latched)
+        self.create_subscription(String, '/carte/json', self._on_carte, latched)
         self.create_subscription(Bool, '/position/fiable', self._on_position_fiable, 10)
         self.create_subscription(String, '/carte/repere', self._on_repere, latched)
 
@@ -361,20 +360,8 @@ class MqttServer(Node):
         self.position_fiable_time = time.monotonic()
 
     def _on_carte(self, msg):
-        points = []
-        for m in msg.markers:
-            if m.action != Marker.ADD:
-                continue
-            try:
-                info = json.loads(m.text)   # nom, vues, age, cap (le point a-t-il une orientation)
-            except ValueError:
-                continue
-            p = pose_json(m.pose)
-            points.append({'type': m.ns, 'nom': info.get('nom'), 'x': p['x'], 'y': p['y'], 'z': p['z'],
-                           'cap': p['cap'] if info.get('cap') else None, 'vues': info.get('vues'),
-                           'age': info.get('age'), 'taille': [round(m.scale.y, 3), round(m.scale.z, 3)]})
-        # retained : une carte ouverte plus tard la reçoit tout de suite
-        self.client.publish('drone/carte', json.dumps(points), retain=True)
+        # JSON déjà au format de drone/carte (nœud carte) ; retained : une carte ouverte plus tard la reçoit tout de suite
+        self.client.publish('drone/carte', msg.data, retain=True)
 
     def _position(self):
         now = time.monotonic()

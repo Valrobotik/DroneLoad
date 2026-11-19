@@ -8,7 +8,8 @@ décident quoi enregistrer et calculent la position (droneload_vol/reperes.py).
   fenêtre). action ADD : ajoute une vue ; DELETE : retire le point.
   Types de `remplacer` (robot qui bouge, point noté une fois par une mission) : dernière vue seule, publié
   dès la 1re vue. Autres types : moyenne des vues, publié à partir de vues_min vues ; une fois 2 x vues_min
-  vues, une vue à plus de ecart_max de la moyenne est rejetée (reflet, pose ambiguë).
+  vues, une vue à plus de ecart_max de la moyenne est rejetée (reflet, pose ambiguë) : un point dont les
+  premières vues étaient fausses est alors figé, seuls DELETE ou /carte/reset le corrigent.
 - Position fiable : un ajout n'est accepté que si /position/fiable (main_node, même critère que la pause des
   missions : UWB présent et sans saut quand le vol a commencé avec l'UWB, et revenu depuis au moins
   delai_recalage de main_node) dit vrai et date de moins de age_fiable_max. Vaut pour tout nœud qui
@@ -20,6 +21,9 @@ décident quoi enregistrer et calculent la position (droneload_vol/reperes.py).
 - /carte/points (visualization_msgs/MarkerArray, transient local, 1 Hz et à chaque changement) : ns = type,
   id = numéro stable du point, text = JSON {"nom", "vues", "age"} (age : s depuis la dernière vue),
   orientation = cap (fenêtre : normale côté recto), scale = taille (fenêtre : épaisseur, largeur, hauteur).
+- /carte/json (std_msgs/String, transient local, avec /carte/points) : les mêmes points au format de
+  drone/carte du dashboard, relayé tel quel par mqtt_server : liste de {"type", "nom", "x", "y", "z",
+  "cap" (degrés, null sans orientation), "vues", "age" (s), "taille" ([largeur, hauteur] en m)}.
 - /carte/reset (std_msgs/Empty) : vide la carte (et le fichier).
 - Sauvegarde : `fichier` (JSON) réécrit à chaque changement, avec le repère de l'EKF (/carte/repere de
   main_node : uwb, gps, flux). Au démarrage, par défaut (garder_carte false), la carte part vide et
@@ -44,8 +48,8 @@ from visualization_msgs.msg import Marker, MarkerArray
 from .reperes import cap_quaternion, quaternion_cap
 
 LATCHED = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
-REPERES_ABSOLUS = ('uwb', 'gps')
-DELAI_DEMARRAGE = 3.0   # s avant le démarrage de la carte : ses messages doivent arriver au dashboard (mqtt_server)   # repères identiques d'un vol à l'autre
+REPERES_ABSOLUS = ('uwb', 'gps')   # repères identiques d'un vol à l'autre
+DELAI_DEMARRAGE = 3.0   # s avant le démarrage de la carte : ses messages doivent arriver au dashboard (mqtt_server)
 COULEURS = {'aruco': (1.0, 0.5, 0.0), 'robot': (0.0, 0.6, 1.0), 'fenetre': (0.6, 0.2, 0.8),
             'obstacle': (0.9, 0.1, 0.1), 'image': (0.1, 0.7, 0.2)}
 
@@ -135,6 +139,7 @@ class Carte(Node):
         self.lancement = time.monotonic()
 
         self.pub = self.create_publisher(MarkerArray, '/carte/points', LATCHED)
+        self.pub_json = self.create_publisher(String, '/carte/json', LATCHED)
         self.create_subscription(Marker, '/carte/ajouter', self._on_ajouter, 100)
         self.create_subscription(Empty, '/carte/reset', self._on_reset, 10)
         self.create_subscription(Empty, '/carte/charger', lambda _: self._charger(self.precedente), 10)
@@ -293,6 +298,7 @@ class Carte(Node):
         efface = Marker(action=Marker.DELETEALL)   # remplace la carte précédente (points effacés compris)
         efface.header.frame_id = 'map'
         markers.markers.append(efface)
+        liste = []   # /carte/json
         maintenant = time.monotonic()
         for point in sorted(self.points.values(), key=lambda p: p.ident):
             if point.genre not in self.remplacer and point.vues < self.vues_min:
@@ -310,10 +316,15 @@ class Carte(Node):
                 m.scale.z = 0.01
             m.color.r, m.color.g, m.color.b = COULEURS.get(point.genre, (0.5, 0.5, 0.5))
             m.color.a = 1.0
-            m.text = json.dumps({'nom': point.nom, 'vues': point.vues, 'age': round(maintenant - point.vu, 1),
-                                 'cap': point.cap is not None})
+            age = round(maintenant - point.vu, 1)
+            m.text = json.dumps({'nom': point.nom, 'vues': point.vues, 'age': age, 'cap': point.cap is not None})
             markers.markers.append(m)
+            x, y, z = point.position
+            liste.append({'type': point.genre, 'nom': point.nom, 'x': round(x, 3), 'y': round(y, 3), 'z': round(z, 3),
+                          'cap': None if point.cap is None else round(math.degrees(point.cap), 1),
+                          'vues': point.vues, 'age': age, 'taille': [round(m.scale.y, 3), round(m.scale.z, 3)]})
         self.pub.publish(markers)
+        self.pub_json.publish(String(data=json.dumps(liste)))
 
 
 def main():

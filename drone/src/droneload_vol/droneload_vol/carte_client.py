@@ -167,8 +167,12 @@ class CarteClient:
             v = (c.position.x, c.position.y, c.position.z)
             if math.sqrt(sum(x * x for x in v)) > self.distance_max:
                 continue
+            try:
+                ident = int(det.results[0].hypothesis.class_id)
+            except ValueError:   # identifiant non numérique : ignoré (une exception ici arrêterait main_node)
+                continue
             q = (c.orientation.x, c.orientation.y, c.orientation.z, c.orientation.w)
-            self._arucos.append({'id': int(det.results[0].hypothesis.class_id),
+            self._arucos.append({'id': ident,
                                  'position': point_map(pose, self.camera_sol, v),
                                  'normale': direction_map(pose, self.camera_sol, rotate(q, (0.0, 0.0, 1.0)))})
 

@@ -1,6 +1,6 @@
 """Changements de repère de la carte : ce que voit une caméra du drone -> repère map (ENU) de MAVROS.
 
-Sans ROS (testé par test/test_reperes.py). Conventions :
+Sans ROS (testé par tests/unitaires/test_reperes.py). Conventions :
 - pose du drone : ((x, y, z), (qx, qy, qz, qw)), /mavros/local_position/pose (repère map ENU, drone FLU) ;
 - repère optique d'une caméra : x vers la droite de l'image, y vers le bas, z dans l'axe de visée ;
 - Camera : position dans le repère du drone (FLU, m) et rotation optique -> drone (matrice 3x3).

@@ -45,7 +45,7 @@ aruco:
 carte:
   ros__parameters:
     vues_min: 3                   # vues avant de publier un point moyenné
-    ecart_max: 0.5                # m : vue plus loin de la moyenne rejetée (après 2 x vues_min vues)
+    ecart_max: 0.5                # m : vue plus loin de la moyenne rejetée (après 2 x vues_min vues : point figé ensuite)
     remplacer: ['robot', 'cible'] # types où chaque vue remplace la précédente (publiés dès la 1re vue)
     fenetre_taille: [1.0, 1.0]    # m, largeur et hauteur de l'ouverture (règlement 2027)
     age_fiable_max: 0.5           # s : /position/fiable plus vieux = position non fiable

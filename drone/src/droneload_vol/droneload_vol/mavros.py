@@ -21,7 +21,7 @@ STREAMS = {
     173: 20.0,   # RANGEFINDER (lidar brut) -> /mavros/rangefinder/rangefinder
     1: 1.0,      # SYS_STATUS (batterie) -> /mavros/battery
     24: 1.0,     # GPS_RAW_INT (fix GPS ; jamais envoyé sans GPS configuré) -> /mavros/gpsstatus/gps1/raw
-    32: 10.0,    # LOCAL_POSITION_NED (position EKF) -> /mavros/local_position/pose (nœud carte, dashboard)
+    32: 10.0,    # LOCAL_POSITION_NED (position EKF) -> /mavros/local_position/pose (get_position, carte, dashboard)
     31: 20.0,    # ATTITUDE_QUATERNION -> orientation de /mavros/local_position/pose et /mavros/imu/data
 }
 # Sans GPS_RAW_INT ce délai (s) après la demande des flux, l'autopilote n'a pas de GPS (config intérieure)

@@ -7,7 +7,9 @@ Usage, depuis la racine du repo (ouverte aussi par ground/launch.py) :
 Reçoit par MQTT (mqtt_server du drone) :
 - drone/position : {"ekf": {x, y, z, cap}, "verite": {...}} à 5 Hz ; ekf = position estimée par la
   Pixhawk (repère map de MAVROS, ENU), verite = position Gazebo (simu seulement), null si absente ;
-- drone/carte : [{"type": "aruco", "id", "x", "y", "z", "vues"}] (retained), même repère que ekf.
+- drone/carte (retained, même repère que ekf) : [{"type", "nom", "x", "y", "z", "cap" (degrés, null sans
+  orientation), "vues", "age" (s depuis la dernière vue), "taille" ([largeur, hauteur] en m)}], format
+  écrit par _on_carte de mqtt_server.
 
 Terrain :
 - --sim : tout est lu dans sim/worlds/voliere.sdf (bords, zones, piliers, fenêtres, ArUco attendus,
