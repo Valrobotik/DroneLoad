@@ -1,6 +1,7 @@
 import math
 
 GAIN = 1.0   # 1/s : vitesse vers le point = GAIN x distance, plafonnée à vitesse_max (freinage à l'approche)
+HAUTEUR_DELAI = 2.0   # s de hauteur lidar inconnue avant l'échec (une mesure perdue de temps en temps : pause)
 
 
 class Deplacement:
@@ -21,6 +22,7 @@ class Deplacement:
     def reset(self):
         # États : SANS_POINT -> EN_ROUTE -> ARRIVE, ou ECHEC
         self.state = 'SANS_POINT' if self.point is None else 'EN_ROUTE'
+        self.hauteur_perdue = None   # heure du début de la perte de la hauteur lidar
 
     def set_point(self, x, y):
         self.point = (float(x), float(y))
@@ -39,11 +41,17 @@ class Deplacement:
             drone.hover()
             return
         if drone.get_current_alt_brute() is None:
-            # Hauteur inconnue : le drone s'arrête, il ne vole pas sans lidar
-            self.log.error('[DÉPLACEMENT] ÉCHEC : hauteur lidar inconnue, stationnaire')
-            self._set_state('ECHEC')
+            # Hauteur inconnue : stationnaire (tenu par la Pixhawk) ; une mesure perdue ne fait pas échouer la
+            # mission, seule une hauteur inconnue plus de HAUTEUR_DELAI s l'arrête
+            if self.hauteur_perdue is None:
+                self.hauteur_perdue = now
+                self.log.warning('[DÉPLACEMENT] hauteur lidar inconnue : stationnaire')
+            elif now - self.hauteur_perdue > HAUTEUR_DELAI:
+                self.log.error(f'[DÉPLACEMENT] ÉCHEC : hauteur lidar inconnue depuis {HAUTEUR_DELAI:.0f} s, stationnaire')
+                self._set_state('ECHEC')
             drone.hover()
             return
+        self.hauteur_perdue = None
         x, y = drone.get_position()   # fiable : vérifié par main_node avant l'appel
         dx, dy = self.point[0] - x, self.point[1] - y
         distance = math.hypot(dx, dy)

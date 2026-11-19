@@ -51,7 +51,7 @@ position_ext:
     origine: [0.0, 0.0, 0.0]      # m, ajoutée après rotation (repère map de MAVROS)
     age_max: 0.3                  # s : mesure UWB plus vieille jetée (ArduPilot suppose un retard fixe, VISO_DELAY_MS)
     delai_perte: 1.0              # s sans mesure avant de signaler l'UWB perdu
-    vitesse_max: 3.0              # m/s : saut rejeté si la mesure s'écarte de plus de vitesse_max x temps écoulé + marge
+    vitesse_saut: 3.0             # m/s : saut rejeté si la mesure s'écarte de plus de vitesse_saut x temps écoulé + marge
     marge: 0.5                    # m : bruit de l'UWB entre deux mesures (0,10 m d'écart type par mesure)
     delai_reprise: 1.0            # s sans position transmise : la mesure suivante est reprise telle quelle
     temps_max: 0.3                # s : plafond du temps écoulé dans le seuil (3 x 0,3 + 0,5 = 1,4 m au plus), sinon une série de sauts finit par passer

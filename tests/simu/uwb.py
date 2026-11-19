@@ -16,7 +16,7 @@ même repère ENU que l'UWB simulé) :
 5. panne d'UWB de 30 s : OBSERVATION, sans critère (état affiché toutes les 5 s, messages de la Pixhawk) ;
    recalage vérifié si le drone vole encore, sinon les étapes suivantes sont sautées. Le flux optique
    simulé est presque parfait : la dérive en simu est optimiste par rapport au vol réel ;
-6. jeu de sources 2 de l'EKF (comme le switch RC9 : flux optique + lidar), stationnaire 10 s, retour au jeu 1 ;
+6. jeu de sources 2 de l'EKF (comme le switch RC9 : flux optique + baromètre), stationnaire 10 s, retour au jeu 1 ;
 7. atterrissage.
 Sans uwb.param (PARAM_UWB= : EKF au flux optique seul, pour comparer) : étape 1 seulement.
 
@@ -37,7 +37,6 @@ import rclpy
 from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import State, StatusText
 from mavros_msgs.srv import CommandLong, MessageInterval
-from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.node import Node
 from rclpy.parameter import Parameter
@@ -45,9 +44,8 @@ from rclpy.qos import QoSDurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import Range
 from std_msgs.msg import String
 
-from commun import ClientMqtt, Etapes, verifier_uwb
+from commun import TAKEOFF_ALT, ClientMqtt, Etapes, attendre, entier, param_drone, verifier_uwb, xy
 
-TAKEOFF_ALT = 1.0       # = takeoff_altitude de drone.yaml
 ALT_TOLERANCE = 0.2     # m
 ALT_TOLERANCE_MOUVEMENT = 0.35   # m : le lidar mesure plus long quand le drone penche pour accélérer
 HOVER_TIME = 20.0       # s
@@ -65,13 +63,9 @@ MAV_CMD_SET_EKF_SOURCE_SET = 42007
 COTE = 2.0              # m : côté des carrés de l'étape de déplacement
 APPROCHE = 1.5          # m en y vers le centre avant le carré : fenetre_1 (x -3, y -2,8 à -1,2) est devant le départ
 VITESSES = (0.5, 1.0)   # m/s (vitesse_max de main_node, réglée en vol)
-VITESSE_DEFAUT = 0.5    # = vitesse_max de drone.yaml, remise à la fin
+VITESSE_DEFAUT = param_drone('main_node', 'vitesse_max')   # m/s, remise à la fin
 SUIVI_MOUVEMENT_MAX = 0.3   # m : écart EKF - vérité pendant un carré avec l'UWB
 RETOUR_MAX = 0.3        # m : distance au point de départ à la fin d'un carré
-
-
-def xy(pose):
-    return pose.position.x, pose.position.y
 
 
 class UwbTest(Node):
@@ -127,12 +121,7 @@ class UwbTest(Node):
             self.interval_requested = now
 
     def wait_for(self, condition, timeout):
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            self.spin()
-            if condition():
-                return True
-        return False
+        return attendre(condition, timeout, spin=self.spin)
 
     def call(self, client, request, timeout=5.0):
         if not client.wait_for_service(timeout_sec=timeout):
@@ -146,10 +135,7 @@ class UwbTest(Node):
 
     def fcu_param(self, nom):
         """Valeur entière d'un paramètre de l'autopilote, None tant que MAVROS ne l'a pas lu."""
-        reponse = self.call(self.fcu_params, GetParameters.Request(names=[nom]))
-        if reponse is None or reponse.values[0].type != ParameterType.PARAMETER_INTEGER:
-            return None
-        return reponse.values[0].integer_value
+        return entier(self.call(self.fcu_params, GetParameters.Request(names=[nom])))
 
     def set_uwb_sim(self, nom, valeur):
         """Règle un paramètre du capteur UWB simulé (actif, taux_sauts)."""
@@ -382,7 +368,7 @@ def main():
                           flush=True)
 
         if avec_uwb and ok:
-            if step('bascule sur le jeu de sources 2 (flux optique + lidar)', node.source_set(2)):
+            if step('bascule sur le jeu de sources 2 (flux optique + baromètre)', node.source_set(2)):
                 ok, s = node.observer(SRC2_TIME)
                 if step(f'stationnaire {SRC2_TIME:.0f} s sur le jeu 2', ok):
                     step(f'dérive réelle < {DERIVE_MAX} m', s['derive'] < DERIVE_MAX)

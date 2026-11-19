@@ -12,11 +12,22 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import paho.mqtt.client as mqtt
+import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 SDF = REPO / 'sim' / 'worlds' / 'voliere.sdf'
+DRONE_YAML = REPO / 'drone' / 'src' / 'droneload_bringup' / 'config' / 'drone.yaml'
 BROKER = ('127.0.0.1', 1883)
-TAKEOFF_ALT = 1.0   # = takeoff_altitude de drone.yaml
+
+
+def param_drone(noeud, nom):
+    """Réglage du code du drone, lu dans drone.yaml (ex. param_drone('main_node', 'takeoff_altitude')) : les
+    tests suivent les réglages au lieu d'en garder une copie."""
+    with open(DRONE_YAML, encoding='utf-8') as f:
+        return yaml.safe_load(f)[noeud]['ros__parameters'][nom]
+
+
+TAKEOFF_ALT = param_drone('main_node', 'takeoff_altitude')   # m, hauteur visée par la mission takeoff
 # Config UWB attendue par tests/run.py (variable DRONELOAD_UWB : '1' avec, '0' sans) ; None : test lancé à la
 # main, il s'adapte à la config de la simu
 UWB_ATTENDU = {'1': True, '0': False}.get(os.environ.get('DRONELOAD_UWB', ''))
@@ -74,6 +85,20 @@ def depart_sdf(sdf=SDF):
             x, y = (float(v) for v in inclus.findtext('pose').split()[:2])
             return x, y
     raise RuntimeError(f'pas de drone dans {sdf}')
+
+
+def xy(pose):
+    """(x, y) d'une geometry_msgs/Pose."""
+    return pose.position.x, pose.position.y
+
+
+def entier(reponse):
+    """Valeur entière d'une réponse GetParameters à un seul nom (ex. paramètre de l'autopilote lu par MAVROS,
+    /mavros/param/get_parameters), None sans réponse ou si le paramètre n'est pas encore lu."""
+    from rcl_interfaces.msg import ParameterType
+    if reponse is None or not reponse.values or reponse.values[0].type != ParameterType.PARAMETER_INTEGER:
+        return None
+    return reponse.values[0].integer_value
 
 
 def ros2(*args, timeout=30, essais=3):

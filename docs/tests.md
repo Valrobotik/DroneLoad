@@ -77,7 +77,7 @@ docker compose exec companion bash -lc 'python3 tests/simu/mission.py'
 2. Utiliser `tests/simu/commun.py` :
    - `Etapes('TEST DE ...')` : `etape(nom, ok)` affiche `[OK]` / `[ÉCHEC]`, `etape.fin()` affiche le verdict et renvoie le code de sortie ;
    - `ClientMqtt(nom)` : le drone vu du dashboard (`telemetry`, `logs`, `set_mode`, `set_point`, `commande`, `attendre`, `heure_log`) ;
-   - `depart_sdf()` (départ du drone lu dans le monde Gazebo), `ros2(...)`, `set_uwb()`, `set_vitesse()`, `verifier_uwb()` ;
+   - `depart_sdf()` (départ du drone lu dans le monde Gazebo), `param_drone(noeud, nom)` (réglage lu dans `drone.yaml`, plutôt que d'en garder une copie dans le test), `xy(pose)`, `entier(reponse)` (paramètre entier lu par `GetParameters`), `ros2(...)`, `set_uwb()`, `set_vitesse()` (en ligne de commande ; un test qui a déjà son nœud ROS passe plutôt par ses services, plus rapides), `verifier_uwb()` ;
    - toujours `atterrir_si_arme()` dans un `finally` : un test interrompu ne laisse jamais le drone en vol.
 3. Piloter le drone comme le dashboard (MQTT : `set_mode`, `set_point`…) plutôt qu'en envoyant des consignes à MAVROS : on teste le vrai code du drone.
 4. Une ligne dans la table `TESTS` de `tests/run.py` : commande, conteneur, config UWB (`True`, `False`, `None` : indifférente), code du drone requis ou non, remise au départ ; et l'ajouter à une suite.
