@@ -22,7 +22,7 @@ import math
 import sys
 import time
 
-from commun import ClientMqtt, Etapes, depart_sdf
+from commun import TAKEOFF_ALT, ClientMqtt, Etapes, Radio, depart_sdf
 
 DEPART = depart_sdf()
 ARUCO_0 = DEPART           # le drone part posé sur l'ArUco 0
@@ -35,6 +35,7 @@ def main():
     parser.add_argument('--uwb', action='store_true', help='simu lancée avec PARAM_UWB=uwb')
     decalage = (0.0, 0.0) if parser.parse_args().uwb else DEPART   # sans UWB : origine de l'EKF au départ
     drone = ClientMqtt('carte_test')
+    radio = Radio()   # pilote simulé : seule la radio passe en GUIDED (FLTMODE_GCSBLOCK)
     etape = Etapes('TEST DE LA CARTE')
 
     def terrain(x, y):
@@ -56,7 +57,8 @@ def main():
         print(f'    au sol : écart EKF / vérité {drone.ecart_ekf_verite(decalage):.2f} m', flush=True)
 
         drone.set_mode('takeoff')
-        if not etape('décollage à 1 m', drone.attendre(drone.en_vol, 150)):
+        radio.guided()
+        if not etape(f'décollage à {TAKEOFF_ALT} m', drone.attendre(drone.en_vol, 150)):
             return 1
         drone.set_mode('releve')
         time.sleep(3.0)
@@ -87,6 +89,7 @@ def main():
         drone.set_mode('attente')
     finally:
         drone.atterrir_si_arme()
+        radio.fermer()
         drone.fermer()
     return etape.fin()
 

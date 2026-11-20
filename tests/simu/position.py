@@ -2,15 +2,15 @@
 
 Piloté par MQTT comme le dashboard (set_point, set_mode), observé par ROS 2 (/mission/state, vérité Gazebo
 /sim/drone/pose), pannes d'UWB par le service uwb (paramètre actif) :
-1. décollage, déplacement à 1,5 m du départ (vers le centre, y croissant : fenetre_1 est devant le
+1. décollage, déplacement à 1,5 m du départ (y croissant, dans la zone A : la fenêtre est devant le
    départ en x) : ARRIVE, vraie position à moins de 0,2 m du point ;
 2. retour au départ avec 5 s de panne d'UWB en route : POSITION_PERDUE en moins de 2 s, drone arrêté
    (vitesse réelle < 0,15 m/s) et toujours en vol ; UWB revenu : reprise après delai_recalage (3 s, l'EKF
    se recale), ARRIVE à moins de 0,2 m ;
 3. nouveau déplacement avec 35 s de panne : POSITION_PERDUE puis ABANDON vers 30 s (delai_position),
    drone toujours en GUIDED et arrêté ; UWB revenu : l'état reste ABANDON (pas de reprise seule) ;
-4. reprise en main par le pilote pendant un déplacement (autopilote mis en ALT_HOLD par /mavros/set_mode,
-   comme à la radio) : main_node passe en attente ; revenu en GUIDED, le drone ne repart pas vers le point ;
+4. reprise en main par le pilote pendant un déplacement (radio simulée en FlowHold, gaz au neutre) :
+   main_node passe en attente ; revenu en GUIDED, le drone ne repart pas vers le point ;
 5. atterrissage.
 Sans uwb.param (PARAM_UWB vide) : étape 1 seulement, au flux optique seul (position relative au départ).
 
@@ -26,15 +26,13 @@ import time
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import State
-from mavros_msgs.srv import SetMode
-from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from std_msgs.msg import String
 
-from commun import ClientMqtt, Etapes, verifier_uwb
+from commun import ClientMqtt, Etapes, Radio, attendre, entier, param_drone, verifier_uwb, xy
 
 DISTANCE = 1.5          # m entre le départ et le point visé
 PRECISION = 0.2         # m : vraie position au point visé
@@ -42,15 +40,11 @@ PRECISION_FLUX = 0.5    # m : au flux optique seul (sans UWB), la position de l'
 VITESSE_ARRET = 0.15    # m/s : drone arrêté pendant la perte de position
 DETECTION_MAX = 2.0     # s entre la coupure de l'UWB et POSITION_PERDUE (delai_source 1 s)
 PANNE_COURTE = 5.0      # s
-PANNE_LONGUE = 35.0     # s (delai_position = 30 s)
-DELAI_POSITION = 30.0   # = delai_position de drone.yaml (temps de simulation, comme main_node)
-DELAI_RECALAGE = 3.0    # = delai_recalage de drone.yaml : reprise de la mission après le retour de l'UWB
+DELAI_POSITION = param_drone('main_node', 'delai_position')   # s (temps de simulation, comme main_node)
+DELAI_RECALAGE = param_drone('main_node', 'delai_recalage')   # s : reprise de la mission après le retour de l'UWB
+PANNE_LONGUE = DELAI_POSITION + 5.0   # s : panne plus longue que delai_position
 VITESSE_RECALAGE = 0.3  # m/s : au retour de l'UWB, l'EKF se recale et le drone corrige la dérive de la panne
 LATCHED = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
-
-
-def xy(pose):
-    return pose.position.x, pose.position.y
 
 
 class PositionTest(Node):
@@ -69,7 +63,7 @@ class PositionTest(Node):
                                  qos_profile_sensor_data)
         self.uwb_params = self.create_client(SetParameters, '/uwb_sim/set_parameters')
         self.fcu_params = self.create_client(GetParameters, '/mavros/param/get_parameters')
-        self.fcu_mode = self.create_client(SetMode, '/mavros/set_mode')
+        self.radio = Radio()   # pilote simulé : seule la radio passe en GUIDED (FLTMODE_GCSBLOCK)
         self.mqtt = ClientMqtt('position_test', afficher_mission=False)   # le drone vu du dashboard
 
     def _on_mission(self, msg):
@@ -86,12 +80,7 @@ class PositionTest(Node):
         return self.mqtt.logs
 
     def wait_for(self, condition, timeout):
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            rclpy.spin_once(self, timeout_sec=0.05)
-            if condition():
-                return True
-        return False
+        return attendre(condition, timeout, spin=lambda: rclpy.spin_once(self, timeout_sec=0.05))
 
     def attendre(self, duree):
         self.wait_for(lambda: False, duree)
@@ -111,10 +100,15 @@ class PositionTest(Node):
         self.attendre(0.5)   # point reçu par main_node avant le mode
         self.cmd('set_mode', mode='deplacement')
 
-    def set_fcu_mode(self, mode):
-        """Change le mode de l'autopilote comme le pilote à la radio (hors main_node)."""
-        reponse = self.call(self.fcu_mode, SetMode.Request(custom_mode=mode))
-        return reponse is not None and reponse.mode_sent and self.wait_for(lambda: self.state.mode == mode, 3)
+    def pilote_flowhold(self):
+        """Le pilote reprend la main à la radio : FlowHold, gaz au neutre (hauteur tenue)."""
+        self.radio.envoyer('flowhold', gaz=1500)
+        return self.wait_for(lambda: self.state.mode not in ('GUIDED', ''), 3)
+
+    def pilote_guided(self):
+        """Le pilote remet l'interrupteur de modes sur GUIDED (seule façon d'y passer)."""
+        self.radio.guided()
+        return self.wait_for(lambda: self.state.mode == 'GUIDED', 3)
 
     def set_uwb(self, actif):
         reponse = self.call(self.uwb_params, SetParameters.Request(
@@ -122,10 +116,8 @@ class PositionTest(Node):
         return reponse is not None and reponse.results[0].successful
 
     def avec_uwb(self):
-        reponse = self.call(self.fcu_params, GetParameters.Request(names=['EK3_SRC1_POSXY']))
-        if reponse is None or reponse.values[0].type != ParameterType.PARAMETER_INTEGER:
-            return None
-        return reponse.values[0].integer_value == 6
+        posxy = entier(self.call(self.fcu_params, GetParameters.Request(names=['EK3_SRC1_POSXY'])))
+        return None if posxy is None else posxy == 6
 
     def sim_now(self):
         return self.get_clock().now().nanoseconds / 1e9
@@ -174,6 +166,7 @@ def main():
               flush=True)
 
         node.cmd('set_mode', mode='takeoff')
+        node.pilote_guided()   # le pilote passe en GUIDED : takeoff arme et décolle
         if not step('décollage', node.wait_for(lambda: node.mission == 'takeoff:STATIONNAIRE', 150)):
             return 1
         node.attendre(3.0)
@@ -249,12 +242,12 @@ def main():
             if step('nouveau déplacement en route', en_route):
                 node.attendre(1.0)
                 debut_logs = len(node.logs)
-                step('pilote : autopilote en ALT_HOLD', node.set_fcu_mode('ALT_HOLD'))
+                step('pilote : radio en FlowHold', node.pilote_flowhold())
                 step('main_node passe en attente (reprise en main signalée)',
                      node.wait_for(lambda: node.mission == 'attente:ATTENTE', 3)
                      and node.wait_for(lambda: any('Reprise en main' in log for log in node.logs[debut_logs:]), 3))
                 node.attendre(2.0)
-                step('retour en GUIDED', node.set_fcu_mode('GUIDED'))
+                step('retour en GUIDED à la radio', node.pilote_guided())
                 node.attendre(1.0)
                 v = node.vitesse_max(3.0)
                 if step('toujours en vol', v is not None):
@@ -266,6 +259,7 @@ def main():
         node.cmd('set_mode', mode='attente')
     finally:
         node.set_uwb(True)   # ne pas laisser l'UWB simulé en panne
+        node.radio.fermer()
         node.mqtt.fermer()
         node.destroy_node()
         rclpy.shutdown()

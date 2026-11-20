@@ -5,10 +5,9 @@ même repère ENU que l'UWB simulé) :
 1. décollage, stationnaire 20 s : le drone ne dérive pas et l'EKF suit la vérité (avec l'UWB : sans décalage) ;
 2. sauts : 30 % des mesures UWB décalées de 2 m pendant 30 s (service uwb, paramètre taux_sauts) : rejetés
    par position_ext (message sur drone/logs), le drone ne bouge pas ;
-3. déplacement : carré de 2 m de côté à 0,5 m/s puis à 1 m/s par la mission deplacement (set_point
-   comme le dashboard, vitesse_max de main_node réglée en vol), dans le repère de l'EKF, vers le centre
-   de la volière, décalé de 1,5 m en y pour ne pas traverser fenetre_1, devant le départ : l'EKF suit
-   la vérité pendant le mouvement ; revenu au départ du carré en se guidant sur l'EKF (comme pour
+3. déplacement : carré de 1,6 m de côté en zone B (entre la fenêtre et les totems) à 0,5 m/s puis à
+   1 m/s par la mission deplacement (set_point comme le dashboard, vitesse_max de main_node réglée en vol),
+   dans le repère de l'EKF : l'EKF suit la vérité pendant le mouvement ; revenu au départ du carré en se guidant sur l'EKF (comme pour
    revenir à la fenêtre), le drone y est vraiment (vérité Gazebo) ; aucun vrai déplacement rejeté comme
    un saut. Panne d'UWB en mouvement : la mission se met en pause, voir position.py ;
 4. panne d'UWB de 5 s (service uwb, paramètre actif) : le drone reste en vol au flux optique, puis l'EKF
@@ -16,13 +15,14 @@ même repère ENU que l'UWB simulé) :
 5. panne d'UWB de 30 s : OBSERVATION, sans critère (état affiché toutes les 5 s, messages de la Pixhawk) ;
    recalage vérifié si le drone vole encore, sinon les étapes suivantes sont sautées. Le flux optique
    simulé est presque parfait : la dérive en simu est optimiste par rapport au vol réel ;
-6. jeu de sources 2 de l'EKF (comme le switch RC9 : flux optique + lidar), stationnaire 10 s, retour au jeu 1 ;
+6. jeu de sources 2 de l'EKF (comme le switch RC9 : flux optique + baromètre), stationnaire 10 s, retour au jeu 1 ;
 7. atterrissage.
 Sans uwb.param (PARAM_UWB= : EKF au flux optique seul, pour comparer) : étape 1 seulement.
 
 Orientation : position_ext envoie une orientation à l'identité (PANS ne donne pas de cap). Pour vérifier
-qu'ArduPilot n'en tire pas une rotation de la position, relancer ce test drone tourné de 90° au départ
-(sim/scripts/reset_drone.sh 90) : l'étape 1 doit montrer le même décalage nul.
+qu'ArduPilot n'en tire pas une rotation de la position, tests/run.py uwb_cap pose le drone tourné de 90°
+(sim/scripts/reset_drone.sh 90) et lance ce test avec --court : vérification du cap de départ, puis étape 1
+seulement (même décalage nul attendu), puis atterrissage.
 
 Lancement : python3 tests/run.py uwb, qui prépare la simu (avec l'UWB). À la main : PARAM_UWB=uwb
 docker compose --profile drone up -d, drone au départ (sim/scripts/reset_drone.sh), puis
@@ -37,7 +37,6 @@ import rclpy
 from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import State, StatusText
 from mavros_msgs.srv import CommandLong, MessageInterval
-from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.node import Node
 from rclpy.parameter import Parameter
@@ -45,9 +44,8 @@ from rclpy.qos import QoSDurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from sensor_msgs.msg import Range
 from std_msgs.msg import String
 
-from commun import ClientMqtt, Etapes, verifier_uwb
+from commun import TAKEOFF_ALT, ClientMqtt, Etapes, Radio, attendre, entier, param_drone, verifier_uwb, xy
 
-TAKEOFF_ALT = 1.0       # = takeoff_altitude de drone.yaml
 ALT_TOLERANCE = 0.2     # m
 ALT_TOLERANCE_MOUVEMENT = 0.35   # m : le lidar mesure plus long quand le drone penche pour accélérer
 HOVER_TIME = 20.0       # s
@@ -62,16 +60,18 @@ SUIVI_MAX = 0.3         # m : écart de l'EKF à la vérité, autour de son déc
 DECALAGE_MAX = 0.3      # m : décalage moyen EKF - vérité avec l'UWB (même repère)
 LOCAL_POSITION_NED = 32
 MAV_CMD_SET_EKF_SOURCE_SET = 42007
-COTE = 2.0              # m : côté des carrés de l'étape de déplacement
-APPROCHE = 1.5          # m en y vers le centre avant le carré : fenetre_1 (x -3, y -2,8 à -1,2) est devant le départ
+# Carré de l'étape de déplacement, repère de Gazebo (= EKF avec l'UWB), volière 2027 (sim/worlds/voliere.sdf) :
+# coin de départ et côtés en x et y positifs, à au moins 0,6 m de la fenêtre (x -1,68, montants de y -0,44 à
+# 0,66), des totems obstacle_1 (-1,5 ; -1,85) et obstacle_2 (0,5 ; 1,5) et du robot (1,4 ; -0,27), trajet
+# direct depuis le départ compris : à 1 m/s, le drone dépasse un peu chaque coin (0,5 m de la fenêtre ne
+# suffisait pas). À revoir si la volière change
+CARRE_COIN = (-1.0, -1.0)
+COTE = 1.6              # m
+CAP_COURT = 90.0        # degrés : cap de départ donné par tests/run.py uwb_cap (--court)
 VITESSES = (0.5, 1.0)   # m/s (vitesse_max de main_node, réglée en vol)
-VITESSE_DEFAUT = 0.5    # = vitesse_max de drone.yaml, remise à la fin
+VITESSE_DEFAUT = param_drone('main_node', 'vitesse_max')   # m/s, remise à la fin
 SUIVI_MOUVEMENT_MAX = 0.3   # m : écart EKF - vérité pendant un carré avec l'UWB
 RETOUR_MAX = 0.3        # m : distance au point de départ à la fin d'un carré
-
-
-def xy(pose):
-    return pose.position.x, pose.position.y
 
 
 class UwbTest(Node):
@@ -127,12 +127,7 @@ class UwbTest(Node):
             self.interval_requested = now
 
     def wait_for(self, condition, timeout):
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            self.spin()
-            if condition():
-                return True
-        return False
+        return attendre(condition, timeout, spin=self.spin)
 
     def call(self, client, request, timeout=5.0):
         if not client.wait_for_service(timeout_sec=timeout):
@@ -146,10 +141,7 @@ class UwbTest(Node):
 
     def fcu_param(self, nom):
         """Valeur entière d'un paramètre de l'autopilote, None tant que MAVROS ne l'a pas lu."""
-        reponse = self.call(self.fcu_params, GetParameters.Request(names=[nom]))
-        if reponse is None or reponse.values[0].type != ParameterType.PARAMETER_INTEGER:
-            return None
-        return reponse.values[0].integer_value
+        return entier(self.call(self.fcu_params, GetParameters.Request(names=[nom])))
 
     def set_uwb_sim(self, nom, valeur):
         """Règle un paramètre du capteur UWB simulé (actif, taux_sauts)."""
@@ -214,22 +206,19 @@ class UwbTest(Node):
         return ecart_max, vitesse_max
 
     def carre(self, v):
-        """Carré de COTE m à v m/s par la mission deplacement, vers le centre de la volière. Retourne None si
+        """Carré de COTE m à v m/s par la mission deplacement, depuis CARRE_COIN, puis retour au départ. Retourne None si
         le drone a quitté sa hauteur, sinon (écart EKF - vérité max, distance réelle au départ du carré une fois
         revenu par l'EKF, vitesse réelle max)."""
         if not self.set_vitesse(v):
             print('    vitesse_max de main_node non réglée', flush=True)
             return None
         ex, ey = xy(self.ekf)
-        # Le départ est près d'un coin : premier côté en x, deuxième en y, tous deux vers le centre (0, 0)
-        sx = -1.0 if ex > 0 else 1.0
-        sy = -1.0 if ey > 0 else 1.0
-        if self.aller(ex, ey + sy * APPROCHE) is None:
+        ox, oy = CARRE_COIN
+        if self.aller(ox, oy) is None:
             return None
-        ox, oy = xy(self.ekf)
         depart = xy(self.verite)
         ecart_max = vitesse_max = 0.0
-        for cx, cy in ((ox + sx * COTE, oy), (ox + sx * COTE, oy + sy * COTE), (ox, oy + sy * COTE), (ox, oy)):
+        for cx, cy in ((ox + COTE, oy), (ox + COTE, oy + COTE), (ox, oy + COTE), (ox, oy)):
             r = self.aller(cx, cy)
             if r is None:
                 return None
@@ -281,9 +270,17 @@ class UwbTest(Node):
         return True, stats
 
 
+def cap_degres(pose):
+    """Cap (degrés, 0 = est, sens trigo) d'une geometry_msgs/Pose."""
+    o = pose.orientation
+    return math.degrees(math.atan2(2 * (o.w * o.z + o.x * o.y), 1 - 2 * (o.y ** 2 + o.z ** 2)))
+
+
 def main():
+    court = '--court' in sys.argv   # tests/run.py uwb_cap : drone tourné au départ, étape 1 seulement
     rclpy.init()
     node = UwbTest()
+    radio = Radio()
     step = Etapes('TEST UWB')
 
     try:
@@ -312,8 +309,12 @@ def main():
             print('    EKF sans UWB (PARAM_UWB vide) : test au flux optique seul (étape 1)', flush=True)
         if not step('position EKF reçue (/mavros/local_position/pose)', node.wait_for(lambda: node.ekf is not None, 15)):
             return 1
+        if court and not step(f'drone tourné de 90° au départ (cap {cap_degres(node.verite):.0f}°)',
+                              abs(cap_degres(node.verite) - CAP_COURT) < 15):
+            return 1
 
         node.set_mode('takeoff')
+        radio.guided()   # seule la radio passe en GUIDED (FLTMODE_GCSBLOCK) : takeoff arme et décolle
         if not step(f'décollage à {TAKEOFF_ALT} m', node.wait_for(lambda: node.state.armed and node.at_alt(), 150)):
             return 1
         node.wait_for(lambda: False, 3.0)   # le drone dépasse un peu la cible avant de se stabiliser
@@ -325,6 +326,7 @@ def main():
             step(f'EKF suit la vérité (écart < {SUIVI_MAX} m)', s['suivi'] < SUIVI_MAX)
             if avec_uwb:
                 step(f'EKF dans le repère de l\'UWB (décalage < {DECALAGE_MAX} m)', s['decalage'] < DECALAGE_MAX)
+        ok = ok and not court   # --court : directement l'atterrissage
 
         if avec_uwb and ok:
             if step('sauts UWB simulés', node.set_uwb_sim('taux_sauts', TAUX_SAUTS)):
@@ -343,7 +345,7 @@ def main():
                 debut_logs = len(node.logs)
                 for v in VITESSES:
                     r = node.carre(v)
-                    if not step(f'carré de {COTE:.0f} m à {v} m/s (mission deplacement) : toujours en vol', r is not None):
+                    if not step(f'carré de {COTE:.1f} m à {v} m/s (mission deplacement) : toujours en vol', r is not None):
                         ok = False
                         break
                     step(f'vitesse atteinte ({r[2]:.2f} m/s, >= {0.8 * v:.2f})', r[2] >= 0.8 * v)
@@ -382,7 +384,7 @@ def main():
                           flush=True)
 
         if avec_uwb and ok:
-            if step('bascule sur le jeu de sources 2 (flux optique + lidar)', node.source_set(2)):
+            if step('bascule sur le jeu de sources 2 (flux optique + baromètre)', node.source_set(2)):
                 ok, s = node.observer(SRC2_TIME)
                 if step(f'stationnaire {SRC2_TIME:.0f} s sur le jeu 2', ok):
                     step(f'dérive réelle < {DERIVE_MAX} m', s['derive'] < DERIVE_MAX)
@@ -398,6 +400,7 @@ def main():
         node.set_vitesse(VITESSE_DEFAUT)   # ne pas laisser main_node à une autre vitesse
         node.set_uwb(True)   # ne pas laisser l'UWB simulé en panne ni décalé
         node.set_uwb_sim('taux_sauts', 0.0)
+        radio.fermer()
         node.mqtt.fermer()
         node.destroy_node()
         rclpy.shutdown()

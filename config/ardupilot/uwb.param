@@ -15,11 +15,7 @@ VISO_POS_Z,0
 VISO_DELAY_MS,50
 # Bruit de position de l'UWB (m) : poids donné à l'UWB face au flux optique
 VISO_POS_M_NSE,0.15
-# Sources EKF, jeu 1 : position UWB + vitesse du flux optique (en parallèle) + hauteur au lidar, cap au compas
+# Sources EKF, jeu 1 : position UWB, en plus de la vitesse du flux optique et de la hauteur au lidar
+# (EK3_SRC1_VELXY 5 et EK3_SRC1_POSZ 2 d'interieur.param). Jeu 2 (voie RC9, secours en cas de panne d'UWB) :
+# celui d'interieur.param, flux optique + baromètre
 EK3_SRC1_POSXY,6
-EK3_SRC1_VELXY,5
-EK3_SRC1_POSZ,2
-# Jeu 2 (voie RC9) : secours en cas de panne d'UWB, flux optique + lidar (même hauteur que le jeu 1)
-EK3_SRC2_POSXY,0
-EK3_SRC2_VELXY,5
-EK3_SRC2_POSZ,2

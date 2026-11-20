@@ -121,7 +121,7 @@ Commandes de l'autopilote, toutes envoyées par `MavrosDrone` sans attendre la r
 
 | Action | MAVROS |
 |---|---|
-| mode GUIDED / LAND | service `/mavros/set_mode` |
+| mode LAND (seulement depuis GUIDED ; GUIDED ne s'obtient que par la radio, voir « Radio et Pi ») | service `/mavros/set_mode` |
 | armement, désarmement | service `/mavros/cmd/arming` |
 | décollage | service `/mavros/cmd/takeoff` |
 | vitesse dans le repère du drone | topic `/mavros/setpoint_raw/local`, `FRAME_BODY_NED` |
@@ -140,11 +140,11 @@ Même règle pour la position : `get_position()` renvoie la position de l'EKF (x
 | Mode | Mission | États |
 |---|---|---|
 | `attente` | vol stationnaire (vitesse nulle, seulement si le drone est armé en GUIDED) | `ATTENTE` |
-| `takeoff` | `Decollage` : GUIDED, armement, décollage à 1 m (ordre renvoyé toutes les 5 s tant que le drone est sous 0,3 m), stationnaire ; `ECHEC` si GUIDED/armement refusés 60 s ou hauteur non atteinte en 30 s (le drone reste en stationnaire, l'opérateur fait `land`) | `GUIDED` → `ARMEMENT` → `MONTEE` → `STATIONNAIRE` (ou `ECHEC`) |
-| `land` | `Atterrissage` : mode LAND jusqu'au désarmement | `LAND` → `DESCENTE` → `POSE` |
+| `takeoff` | `Decollage` : attend que le pilote passe en GUIDED à la radio (sans limite de temps), arme, décolle à 1 m (ordre renvoyé toutes les 5 s tant que le drone est sous 0,3 m), stationnaire ; autopilote sorti de GUIDED avant l'armement : retour en attente, jamais d'armement hors GUIDED ; `ECHEC` si l'armement est refusé 60 s (kill actif, pré-armements) ou si la hauteur n'est pas atteinte en 30 s (le drone reste en stationnaire, l'opérateur fait `land`) | `ATTENTE_GUIDED` → `ARMEMENT` → `MONTEE` → `STATIONNAIRE` (ou `ECHEC`) |
+| `land` | `Atterrissage` : mode LAND jusqu'au désarmement, seulement depuis GUIDED ; dans un autre mode, le pilote a la main : `REFUSE`, rien n'est envoyé ; drone déjà désarmé : `POSE` | `LAND` → `DESCENTE` → `POSE` (ou `REFUSE`) |
 | `epreuve1` | `Epreuve1` (drone en stationnaire) : cible validée si seule la classe demandée est détectée sur ≥ 80 % des images en 2 s, puis le crochet s'ouvre ; `SANS_VISION` (signalé) si aucune image analysée sur une fenêtre de 2 s, retour en `RECHERCHE` quand les images reviennent | `RECHERCHE` → `TROUVEE` (ou `SANS_VISION`) |
 | `epreuve2` | `run_epreuve2` : se tourne vers la vache et avance tant qu'elle est centrée | `SUIVI` |
-| `deplacement` | `Deplacement` : va au point visé (`set_point`, repère de l'EKF) à hauteur constante, vitesse `min(vitesse_max, distance)` (0,5 m/s au plus), puis stationnaire ; `ECHEC` si la hauteur lidar est inconnue. Mission qui a besoin de la position (voir ci-dessous) | `SANS_POINT`, `EN_ROUTE` → `ARRIVE` (ou `ECHEC`, `POSITION_PERDUE`, `ABANDON`) |
+| `deplacement` | `Deplacement` : va au point visé (`set_point`, repère de l'EKF) à hauteur constante, vitesse `min(vitesse_max, distance)` (0,5 m/s au plus), puis stationnaire ; hauteur lidar inconnue : stationnaire, `ECHEC` si elle le reste plus de 2 s (`HAUTEUR_DELAI`). Mission qui a besoin de la position (voir ci-dessous) | `SANS_POINT`, `EN_ROUTE` → `ARRIVE` (ou `ECHEC`, `POSITION_PERDUE`, `ABANDON`) |
 | `releve` | `Releve` : enregistre sur la carte tout ce que voit la caméra sol (section « Carte de la volière »), en stationnaire, ou vers un point envoyé par `set_point` pendant le relevé (point oublié à chaque entrée dans le mode). Besoin de la position | `STATIONNAIRE`, puis ceux de `deplacement` |
 
 Une mission ne bloque jamais : elle envoie une demande, puis vérifie le résultat aux ticks suivants. Elle réessaie toutes les secondes si la demande est refusée. À chaque demande de mode, même identique au mode en cours (relancer un `takeoff` en `ECHEC`), les missions sont remises à zéro et, sauf en `takeoff`, une vitesse nulle est envoyée tout de suite : sinon ArduPilot garderait la consigne de vitesse du mode précédent jusqu'à `GUID_TIMEOUT`. Une erreur dans une mission est journalisée et met le drone en stationnaire, sans arrêter le nœud.
@@ -208,7 +208,7 @@ Celui de 2026, complété pour la carte de la volière (`drone/position`, `drone
 
 Un message mal formé (non JSON, champ manquant ou invalide) est signalé sur `drone/logs` et ignoré.
 
-`restart_script` arrête tout le code du drone, qui est relancé par le service qui l'a démarré : Docker en simu (`restart: unless-stopped`), service systemd `droneload` sur la Pi (installé par `install/`, rôle `pi`, démarré au boot, `Restart=always` ; `journalctl -u droneload` pour ses logs). Les autres nœuds sont relancés seuls par le launch s'ils s'arrêtent (`respawn`, 2 s) ; seul l'arrêt de `mqtt_server` arrête tout.
+`restart_script` arrête tout le code du drone, qui est relancé par le service qui l'a démarré : Docker en simu (`restart: unless-stopped`), service systemd `droneload` sur la Pi (installé par `install/`, rôle `pi`, démarré au boot, `Restart=always` ; `journalctl -u droneload` pour ses logs). Les nœuds sont relancés seuls par le launch s'ils s'arrêtent (`respawn`, 2 s), `mqtt_server` et MAVROS (`respawn_mavros`) compris : seul `restart_script` (sortie de `mqtt_server` avec le code 3) arrête tout. Un plantage de `mqtt_server` en vol coupe donc la liaison avec le dashboard 2 à 3 s, sans arrêter MAVROS ni la mission en cours.
 
 Bilan de démarrage : 20 s après son lancement, `mqtt_server` envoie deux lignes sur `drone/logs` (Pixhawk et son mode, lidar, batterie ; caméra, vision, crochet, UWB, résultat d'`install/check.py` sur la Pi), ce qui manque en majuscules. La Pixhawk ne redémarre pas avec la Pi (alimentation séparée) : `reboot_fcu` la redémarre, MAVROS se reconnecte seul.
 
@@ -362,7 +362,7 @@ Les paramètres `MAVn_*` (débits de flux, options) sont numérotés par canal M
 | GPS | `GPS1_TYPE 1` | `GPS1_TYPE 0` |
 | Sources EKF, jeu 1 | GPS (position, vitesse), baromètre (hauteur), compas | flux optique (vitesse), lidar (hauteur), compas, aucune position absolue |
 | Jeu 2 (voie RC9) | flux optique + lidar | flux optique + baromètre |
-| Modes voie 6 (positions 4 / 6) | PosHold / Loiter | FlowHold / Guided |
+| Modes voie 6 (positions 4 / 6) | Loiter / Guided | FlowHold / Guided |
 | Contrôles d'armement | tous (`ARMING_SKIPCHK 0`) | tous sauf GPS (`ARMING_SKIPCHK 1053192`) |
 | Origine EKF | donnée par le GPS | fictive, envoyée par `mavros.py` tant que le drone est désarmé |
 
@@ -375,14 +375,14 @@ Système principal de position en intérieur (#17, #24) : 6 ancres DWM1001-DEV a
 | Jeu de sources (voie RC9) | Position horizontale | Vitesse horizontale | Hauteur | Usage |
 |---|---|---|---|---|
 | 1 | UWB (`EK3_SRC1_POSXY 6`, ExternalNav) | flux optique, en parallèle | lidar | normal |
-| 2 | aucune | flux optique | lidar | panne d'UWB |
+| 2 | aucune | flux optique | baromètre (jeu 2 d'`interieur.param`) | panne d'UWB |
 
 Pilote `uwb` : interroge le tag à 20 Hz par l'API binaire TLV de PANS (`dwm_loc_get`, décodée par `uwb_tlv.py`), recommandée par Qorvo pour un programme : contrairement au shell texte (`lep`), elle ne dépend pas de l'état du tag, qui reste alimenté quand le nœud redémarre, et donne aussi les ancres utilisées. Port `/dev/uwb` (lien udev vers le J-Link SEGGER de la carte DEV, rôle `pi` ; `./install/apply.sh` installe aussi `python3-serial`). Un seul lecteur sur le port (deux lecteurs se partagent les octets : panne de 2026) : port non ouvert s'il l'est déjà par un autre programme (cherché dans `/proc`, programme nommé sur `drone/logs`), puis verrouillé par le noyau (`TIOCEXCL`) : toute autre ouverture échoue (« Device or resource busy »), sauf avec `sudo`. Positions de qualité < `qf_min` ou calculées avec moins de `ancres_min` ancres (4 : avec 3 ancres, deux positions sont possibles, symétriques par rapport à leur plan, et le mauvais choix change aussi x, y si les ancres sont à des hauteurs différentes ; 3 seulement si elles sont toutes à la même hauteur) ignorées ; tag absent, occupé ou muet 2 s : signalé sur `drone/logs` et port rouvert ; tag laissé en mode shell : ramené en mode TLV (`quit`). **Non testé sur le vrai tag** : format TLV d'après la documentation de Qorvo, vérifié contre un faux tag (`tests/simu/uwb_pilote.py`) ; l'interrogation ajoute en moyenne 25 ms de retard (à compter dans `VISO_DELAY_MS`).
 
 Chaîne : tag → `uwb` → `/uwb/pose` (repère des ancres) → `position_ext` → `/mavros/vision_pose/pose_cov` (repère `map`, ENU) → `VISION_POSITION_ESTIMATE` (`VISO_TYPE 1`). `position_ext` (réglages dans `drone.yaml`) :
 - tourne et décale la position : `cap_ancres` = angle de l'axe x des ancres par rapport à l'est, à mesurer sur le terrain. Le cap de l'EKF vient du compas : un repère des ancres mal orienté contredirait la vitesse du flux optique (spirales en stationnaire). En simu, Gazebo est déjà en ENU (0) ;
 - ne transmet que les mesures de moins de `age_max` (0,3 s) : ArduPilot ne lit pas l'horodatage et suppose un retard fixe (`VISO_DELAY_MS`) ;
-- rejette les sauts (ancre masquée, reflet) : une mesure plus loin de la dernière position transmise que `vitesse_max` (3 m/s) × temps écoulé (plafonné à `temps_max`, 0,3 s : écart de 1,4 m au plus) + `marge` (0,5 m, bruit de l'UWB) n'est pas transmise ; sans plafond, après quelques sauts de suite le seuil grandissait jusqu'à accepter un saut, et le filtre se calait sur les fausses mesures (vu en simu) ; après `delai_reprise` (1 s) sans position transmise, la mesure suivante est reprise telle quelle (sinon un vrai déplacement pendant une panne bloquerait l'UWB) ;
+- rejette les sauts (ancre masquée, reflet) : une mesure plus loin de la dernière position transmise que `vitesse_saut` (3 m/s) × temps écoulé (plafonné à `temps_max`, 0,3 s : écart de 1,4 m au plus) + `marge` (0,5 m, bruit de l'UWB) n'est pas transmise ; sans plafond, après quelques sauts de suite le seuil grandissait jusqu'à accepter un saut, et le filtre se calait sur les fausses mesures (vu en simu) ; après `delai_reprise` (1 s) sans position transmise, la mesure suivante est reprise telle quelle (sinon un vrai déplacement pendant une panne bloquerait l'UWB) ;
 - signale sur `drone/logs` la perte de l'UWB (1 s sans mesure) et son retour.
 
 À régler sur le vrai drone : `VISO_POS_X/Y/Z` (position du tag), `VISO_DELAY_MS` (retard de PANS), `VISO_POS_M_NSE` (poids de l'UWB face au flux optique). Vérifié en simu (`PARAM_UWB=uwb`, `tests/simu/uwb.py`) : stationnaire, 30 % de sauts de 2 m rejetés pendant 30 s, carrés de 2 m à 0,5 et 1 m/s par la mission `deplacement` (EKF à moins de 0,2 m de la vraie position en mouvement, retour au départ guidé par l'EKF à moins de 0,1 m ; panne d'UWB en plein déplacement : la mission se met en pause, `tests/simu/position.py`), panne de 5 s, panne de 30 s (observée : toujours en GUIDED à 1,1 m, dérive 0,07 m au plus, aucun message de la Pixhawk, recalage au retour ; optimiste, le flux optique simulé étant presque parfait), bascule sur le jeu 2, drone tourné de 90° au départ (l'orientation à l'identité envoyée ne fait pas tourner la position).
@@ -393,8 +393,9 @@ Secours le jour de la finale, sans changer le code : finale en extérieur → `p
 
 - **Moteurs** : châssis quadri X, moteurs 1-4 sur `SERVO9-12` (sorties FMU), DShot300 (`MOT_PWM_TYPE 5`) bidirectionnel (`SERVO_BLH_BDMASK`), sens des 4 moteurs inversé par `SERVO_BLH_RVMASK`, filtre notch sur le régime des ESC (`INS_HNTCH_MODE 3`).
 - **Batterie** : capteur I2C du module d'alimentation (`BATT_MONITOR 21`), LiPo 3S 5000 mAh (`BATT_CAPACITY`). Seuil bas : 10,5 V ou 1250 mAh restants ; seuil critique : 10,2 V ou 750 mAh restants. Dans les deux cas, le drone atterrit (`BATT_FS_LOW_ACT`/`CRT_ACT` 1). L'armement est refusé sous 10,6 V ou sous 1500 mAh restants (`BATT_ARM_VOLT`/`ARM_MAH`). Il faut donc une LiPo assez chargée et une capacité restante juste (vérifier `BATT_CAPACITY` si on change de batterie).
-- **Modes** (voie 6) : Stabilize, puis PosHold et Loiter en extérieur, FlowHold et Guided en intérieur (tableau ci-dessus). Voies auxiliaires : RC8 arrêt d'urgence des moteurs, RC9 jeu de sources EKF, RC10 calibration du flux optique.
+- **Modes** (voie 6) : Stabilize, puis Loiter (extérieur) ou FlowHold (intérieur) en position 4, Guided en position 6 partout (tableau ci-dessus). Voies auxiliaires : RC8 arrêt d'urgence des moteurs, RC9 jeu de sources EKF, RC10 calibration du flux optique.
 - **Failsafes** : perte radio → atterrissage (`FS_THR_ENABLE 3`), EKF incohérent → atterrissage (`FS_EKF_ACTION 1`), pas de failsafe GCS (`FS_GCS_ENABLE 0`) ; en GUIDED, sans consigne de la Pi pendant 3 s (`GUID_TIMEOUT`) le drone s'arrête en stationnaire.
+- **Radio et Pi** : seule la radio passe en GUIDED (`FLTMODE_GCSBLOCK 16`, bit Guided : GUIDED demandé par MAVLink est refusé, « GCS entry disabled » ; les autres modes, dont LAND, restent permis). Le kill motor (RC8, `RC8_OPTION 31`) vaut autorisation d'armer : actif, ArduPilot refuse tout armement, MAVLink compris, et laisse les moteurs coupés (seul l'armement forcé passerait outre, jamais utilisé par la Pi). La Pi ne passe en LAND que depuis GUIDED (`MavrosDrone.land()`). Procédure : kill relâché, interrupteur de modes sur GUIDED, puis `takeoff` au dashboard (ou dans l'ordre inverse : la mission attend GUIDED).
 - **Bouton de sécurité** actif au démarrage (`BRD_SAFETY_DEFLT 1`) : l'armement (y compris par MQTT) est refusé tant qu'il n'a pas été pressé.
 - **Montée en GUIDED** : `WP_SPD_UP` 2,5 m/s (défaut ; la sauvegarde avait 15 cm/s par erreur), descente `WP_SPD_DN` 1,5 m/s.
 - **Simulation** : `sitl.parm` remplace les sorties moteurs (PWM sur 1-4), les calibrations du compas et des accéléromètres, la batterie, le bouton de sécurité et le MTF-01 ; les réglages de vol (PID, vitesses, failsafes, EKF) sont ceux de la Pixhawk.

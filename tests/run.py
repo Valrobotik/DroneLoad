@@ -46,6 +46,7 @@ class Test:
     uwb: object = None          # True : PARAM_UWB=uwb ; False : sans ; None : indifférent
     drone: bool = True          # service drone (code du drone) lancé ; False : arrêté pendant le test
     reset: bool = True          # drone remis au départ avant le test
+    cap: object = None          # cap de départ en degrés (reset_drone.sh <cap>) ; None : celui du monde
 
 
 TESTS = {
@@ -62,12 +63,14 @@ TESTS = {
                      'python3 tests/simu/position.py', uwb=True),
     'uwb': Test('position UWB dans l\'EKF : stationnaire, sauts, carrés, pannes, jeu de sources 2',
                 'python3 tests/simu/uwb.py', uwb=True),
+    'uwb_cap': Test('position UWB, drone tourné de 90° au départ : EKF au bon endroit (cap non fourni par l\'UWB)',
+                    'python3 tests/simu/uwb.py --court', uwb=True, cap=90),
     'uwb_pilote': Test('pilote du tag UWB contre un faux tag (sans Gazebo)',
                        '. drone/install/setup.bash && python3 tests/simu/uwb_pilote.py', reset=False),
 }
 SUITES = {
     'base': ['unitaires', 'smoke', 'mission', 'carte'],
-    'avec_uwb': ['uwb', 'position', 'carte_uwb', 'carte_mouvement', 'uwb_pilote'],
+    'avec_uwb': ['uwb', 'uwb_cap', 'position', 'carte_uwb', 'carte_mouvement', 'uwb_pilote'],
 }
 SUITES['tout'] = SUITES['base'] + SUITES['avec_uwb']
 
@@ -147,7 +150,7 @@ class Simu:
         print(f'  ATTENTION : code du drone pas prêt après {DRONE_DELAI} s (docker compose logs drone)', flush=True)
         return False
 
-    def reset(self, attente):
+    def reset(self, attente, cap=None):
         script = SIM / 'scripts' / 'reset_drone.sh'
         commande = [str(script)]
         if platform.system() == 'Windows':
@@ -156,9 +159,12 @@ class Simu:
                 print('  Git Bash introuvable : drone pas remis au départ', flush=True)
                 return
             commande = [bash, script.as_posix()]
+        if cap is not None:
+            commande.append(str(cap))
         env = dict(os.environ, PARAM_UWB='uwb' if self.uwb else '')
         subprocess.run(commande, cwd=SIM, env=env, capture_output=True, text=True)
-        print(f'  drone remis au départ, {attente:.0f} s pour que le SITL soit prêt à armer', flush=True)
+        tourne = '' if cap is None else f' (tourné à {cap}°)'
+        print(f'  drone remis au départ{tourne}, {attente:.0f} s pour que le SITL soit prêt à armer', flush=True)
         time.sleep(attente)
 
     def executer(self, test, journal):
@@ -268,7 +274,7 @@ def main():
                     bilan.append((nom, False, time.monotonic() - debut))
                     continue
                 if test.reset:
-                    simu.reset(args.attente)
+                    simu.reset(args.attente, test.cap)
                 code = simu.executer(test, journal)
             bilan.append((nom, code == 0, time.monotonic() - debut))
     except KeyboardInterrupt:

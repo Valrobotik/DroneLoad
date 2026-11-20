@@ -11,7 +11,7 @@ config/ardupilot/uwb.param), avec la vitesse du flux optique et la hauteur du li
   En simu, le monde Gazebo est déjà en ENU : 0 et [0, 0, 0].
 - Seules les mesures fraîches (moins de age_max) sont transmises : ArduPilot ne lit pas l'horodatage
   et suppose un retard fixe (VISO_DELAY_MS), une mesure en retard tirerait le drone vers une position passée.
-- Sauts rejetés : une mesure plus loin de la dernière position transmise que vitesse_max x temps écoulé
+- Sauts rejetés : une mesure plus loin de la dernière position transmise que vitesse_saut x temps écoulé
   (plafonné à temps_max : 1,4 m au plus) + marge (bruit de l'UWB) est fausse (ancre masquée, reflet) et
   n'est pas transmise. Sans position transmise depuis delai_reprise, la mesure suivante est reprise telle
   quelle (sinon un vrai déplacement pendant une panne bloquerait l'UWB pour toujours).
@@ -36,7 +36,7 @@ class PositionExt(Node):
         self.declare_parameter('origine', [0.0, 0.0, 0.0])   # m, dans le repère map
         self.declare_parameter('age_max', 0.3)               # s
         self.declare_parameter('delai_perte', 1.0)           # s
-        self.declare_parameter('vitesse_max', 3.0)           # m/s : déplacement réel maximal du drone
+        self.declare_parameter('vitesse_saut', 3.0)          # m/s : déplacement réel maximal du drone
         self.declare_parameter('marge', 0.5)                 # m : bruit de l'UWB entre deux mesures
         self.declare_parameter('delai_reprise', 1.0)         # s sans position transmise avant de reprendre
         self.declare_parameter('temps_max', 0.3)             # s : plafond du temps écoulé dans le seuil de saut
@@ -45,7 +45,7 @@ class PositionExt(Node):
         self.origine = list(self.get_parameter('origine').value)
         self.age_max = self.get_parameter('age_max').value
         self.delai_perte = self.get_parameter('delai_perte').value
-        self.vitesse_max = self.get_parameter('vitesse_max').value
+        self.vitesse_saut = self.get_parameter('vitesse_saut').value
         self.marge = self.get_parameter('marge').value
         self.delai_reprise = self.get_parameter('delai_reprise').value
         self.temps_max = self.get_parameter('temps_max').value
@@ -97,7 +97,7 @@ class PositionExt(Node):
                 distance = math.hypot(x - ax, y - ay)
                 # Temps plafonné : sinon, après quelques sauts de suite, le seuil grandit jusqu'à accepter
                 # un saut, et le filtre se cale sur les fausses mesures en rejetant les vraies
-                if distance > self.vitesse_max * min(max(dt, 0.0), self.temps_max) + self.marge:
+                if distance > self.vitesse_saut * min(max(dt, 0.0), self.temps_max) + self.marge:
                     self.rejets += 1
                     if time.monotonic() - self.rappel_saut > ERROR_THROTTLE:
                         self.get_logger().warn(f'Saut UWB rejeté ({distance:.1f} m en {dt:.2f} s)')

@@ -2,7 +2,7 @@
 
 Usage, depuis la racine du repo (ouverte aussi par ground/launch.py) :
     .venv/bin/python ground/carte.py --broker localhost --sim                 (simulation)
-    .venv/bin/python ground/carte.py --broker <IP du Pi> --taille 8x6 --depart -3.75,-1.5
+    .venv/bin/python ground/carte.py --broker <IP du Pi> --taille 8x5 --depart -3.45,-1.25
 
 Reçoit par MQTT (mqtt_server du drone) :
 - drone/position : {"ekf": {x, y, z, cap}, "verite": {...}} à 5 Hz ; ekf = position estimée par la
@@ -304,7 +304,7 @@ def main():
     parser.add_argument('--broker', default='192.168.2.3', help='IP du Raspberry Pi (broker MQTT)')
     parser.add_argument('--sim', action='store_true', help='terrain lu dans le monde Gazebo')
     parser.add_argument('--sdf', default=str(SDF), help='monde Gazebo (avec --sim)')
-    parser.add_argument('--taille', default='8x6', help='volière LxP en m, centrée (sans --sim)')
+    parser.add_argument('--taille', default='8x5', help='terrain LxP en m, centré (sans --sim ; règlement 2027 : 8x5)')
     parser.add_argument('--depart', help='départ du drone x,y en m (repère terrain ; --sim : lu dans le monde)')
     parser.add_argument('--rotation', type=float, default=0.0,
                         help="degrés : axe x de l'EKF (est) par rapport à l'axe x du terrain, sens trigo (--repere depart)")

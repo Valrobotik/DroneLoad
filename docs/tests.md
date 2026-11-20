@@ -47,16 +47,17 @@ Pour regarder un test dans la vue 3D : lancer d'abord la simu à la main avec `-
 | Test | Vérifie | Simu | Durée |
 |---|---|---|---|
 | `unitaires` | changements de repère de la carte (`reperes.py`) : caméra sol vers la carte, fenêtre par ses ArUco (recto, verso, tournée) | aucune | < 1 s |
-| `smoke` | autopilote seul : MAVROS, caméras, lidar, GUIDED et armement, décollage à 1 m, 5 s de stationnaire, atterrissage. Ne teste pas le code de `drone/` | sans le code du drone | 1 min |
-| `mission` | 2 cycles décollage / attente stable 5 s / atterrissage commandés par MQTT comme le dashboard ; pose 3D de l'ArUco 0 cohérente avec le lidar | code du drone | 1,5 min |
+| `smoke` | autopilote seul : MAVROS, caméras, lidar, GUIDED refusé par MAVLink (`FLTMODE_GCSBLOCK`), GUIDED à la radio simulée et armement, décollage à 1 m, 5 s de stationnaire, atterrissage. Ne teste pas le code de `drone/` | sans le code du drone | 1 min |
+| `mission` | 2 cycles décollage / attente stable 5 s / atterrissage commandés par MQTT comme le dashboard, GUIDED à la radio simulée ; `takeoff` attend GUIDED sans armer ; `land` refusé quand le pilote a repris la main (FlowHold) ; pose 3D de l'ArUco 0 cohérente avec le lidar | code du drone | 1,5 min |
 | `carte` | carte en stationnaire (mission `releve`) : ArUco 0 placé à moins de 8 cm (erreur de l'EKF retirée), EKF à moins de 30 cm de la vérité, `reset_carte` | sans UWB | 1 min |
 | `carte_uwb` | idem, avec l'UWB | avec UWB | 1 min |
 | `carte_mouvement` | carte en mouvement : passages au-dessus de l'ArUco 0 à 0,5 puis 1 m/s (point à moins de 15 cm ; à 1 m/s, pas toujours placé : observation), panne d'UWB et recalage de 3 s (rien enregistré), changement de repère refusé, nœud `carte` redémarré puis `charger_carte` | avec UWB, conteneur `drone` | 2,5 min |
-| `position` | perte de position en mission `deplacement` : pause en moins de 2 s, reprise après le recalage, abandon après 30 s, reprise en main par le pilote (ALT_HOLD) sans reprise seule | avec UWB | 2 min |
-| `uwb` | position UWB dans l'EKF : stationnaire, 30 % de sauts de 2 m rejetés, carrés de 2 m à 0,5 et 1 m/s, pannes de 5 et 30 s, jeu de sources 2 | avec UWB | 4 min |
+| `position` | perte de position en mission `deplacement` : pause en moins de 2 s, reprise après le recalage, abandon après 30 s, reprise en main par le pilote (radio simulée en FlowHold) sans reprise seule | avec UWB | 2 min |
+| `uwb` | position UWB dans l'EKF : stationnaire, 30 % de sauts de 2 m rejetés, carrés de 1,6 m en zone B à 0,5 et 1 m/s, pannes de 5 et 30 s, jeu de sources 2 | avec UWB | 4 min |
+| `uwb_cap` | même EKF que `uwb`, drone posé tourné de 90° au départ (`reset_drone.sh 90`) : l'UWB ne donne pas de cap, la position de l'EKF ne doit pas tourner avec le drone (décollage, stationnaire 20 s, décalage EKF / vérité, atterrissage) | avec UWB | 1,5 min |
 | `uwb_pilote` | pilote du vrai tag UWB (`uwb.py`) contre un faux tag : décodage TLV, ancres, tag muet, port déjà ouvert | code du drone construit | 0,5 min |
 
-Suites : `base` (unitaires, smoke, mission, carte), `avec_uwb` (uwb, position, carte_uwb, carte_mouvement, uwb_pilote), `tout` (les deux, ~15 min).
+Suites : `base` (unitaires, smoke, mission, carte), `avec_uwb` (uwb, uwb_cap, position, carte_uwb, carte_mouvement, uwb_pilote), `tout` (les deux, ~17 min).
 
 Le détail de chaque test (étapes, seuils) est en tête de son fichier dans `tests/simu/`.
 
@@ -82,10 +83,12 @@ docker compose exec companion bash -lc 'python3 tests/simu/mission.py'
 2. Utiliser `tests/simu/commun.py` :
    - `Etapes('TEST DE ...')` : `etape(nom, ok)` affiche `[OK]` / `[ÉCHEC]`, `etape.fin()` affiche le verdict et renvoie le code de sortie ;
    - `ClientMqtt(nom)` : le drone vu du dashboard (`telemetry`, `logs`, `position`, `carte`, `set_mode`, `set_point`, `commande`, `attendre`, `point`, `heure_log`) ;
-   - `depart_sdf()` (départ du drone lu dans le monde Gazebo), `ros2(...)`, `set_uwb()`, `set_vitesse()`, `verifier_uwb()` ;
+   - `Radio()` : radio du pilote simulée (voies RC envoyées à l'entrée RC du SITL, UDP 5501) : `guided()` met l'interrupteur de modes sur GUIDED (seule façon d'y passer, `FLTMODE_GCSBLOCK`), `envoyer('flowhold', gaz=1500)` simule une reprise en main ; à appeler avant tout décollage, après chaque remise au départ (le SITL redémarré oublie les voies) ;
+   - `depart_sdf()` (départ du drone lu dans le monde Gazebo), `position_sdf('aruco_0')` (position d'un visuel du monde) : lire les cotes dans `sim/worlds/voliere.sdf` plutôt que les recopier dans le test ;
+   - `param_drone(noeud, nom)` (réglage lu dans `drone.yaml`, plutôt que d'en garder une copie dans le test), `xy(pose)`, `entier(reponse)` (paramètre entier lu par `GetParameters`), `ros2(...)`, `set_uwb()`, `set_vitesse()` (en ligne de commande ; un test qui a déjà son nœud ROS passe plutôt par ses services, plus rapides), `verifier_uwb()` ;
    - toujours `atterrir_si_arme()` dans un `finally` : un test interrompu ne laisse jamais le drone en vol.
 3. Piloter le drone comme le dashboard (MQTT : `set_mode`, `set_point`…) plutôt qu'en envoyant des consignes à MAVROS : on teste le vrai code du drone.
-4. Une ligne dans la table `TESTS` de `tests/run.py` : commande, conteneur, config UWB (`True`, `False`, `None` : indifférente), code du drone requis ou non, remise au départ ; et l'ajouter à une suite.
+4. Une ligne dans la table `TESTS` de `tests/run.py` : commande, conteneur, config UWB (`True`, `False`, `None` : indifférente), code du drone requis ou non, remise au départ (et cap de départ, `cap=90` pour `uwb_cap`) ; et l'ajouter à une suite.
 5. Un résultat qui dépend du hasard de la simu et qui n'est pas une erreur (ex. ArUco pas vu à 1 m/s) : l'afficher en `OBSERVATION`, sans `[ÉCHEC]`.
 
 Un test unitaire (sans ROS) va dans `tests/unitaires/test_*.py`, exécutable aussi directement (`python3 <fichier>`).

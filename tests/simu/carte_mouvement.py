@@ -34,7 +34,7 @@ import subprocess
 import sys
 import time
 
-from commun import REPO, ClientMqtt, Etapes, depart_sdf, ros2, set_uwb, set_vitesse
+from commun import REPO, TAKEOFF_ALT, ClientMqtt, Etapes, Radio, depart_sdf, param_drone, ros2, set_uwb, set_vitesse
 
 ARUCO_0 = depart_sdf()         # le drone part posé sur l'ArUco 0
 
@@ -46,9 +46,9 @@ SUIVI_MAX = 0.3                # m : écart EKF - vérité pendant le passage
 RECHARGE_MAX = 0.01            # m : point rechargé à la même place
 CARTE_NODE = 'lib/droneload_vol/carte'   # motif pkill du processus du nœud carte
 PANNE = 5.0                    # s de panne d'UWB
-DELAI_RECALAGE = 3.0           # = delai_recalage de main_node (drone.yaml)
+DELAI_RECALAGE = param_drone('main_node', 'delai_recalage')   # s
 VITESSES = (0.5, 1.0)          # m/s des passages
-VITESSE_DEFAUT = 0.5           # = vitesse_max de drone.yaml, remise à la fin
+VITESSE_DEFAUT = param_drone('main_node', 'vitesse_max')     # m/s, remise à la fin
 VITESSE_SURE = 0.5             # m/s : au-delà, l'ArUco peut ne pas être placé (observation seulement)
 
 
@@ -97,6 +97,7 @@ class Test(ClientMqtt):
 
 def main():
     test = Test()
+    radio = Radio()
     step = Etapes('TEST DE LA CARTE EN MOUVEMENT')
 
     def verifier_point(nom, tolerance):
@@ -123,7 +124,8 @@ def main():
         test.commande('reset_carte')
 
         test.set_mode('takeoff')
-        if not step('décollage à 1 m', test.attendre(test.en_vol, 150)):
+        radio.guided()   # pilote simulé : seule la radio passe en GUIDED (FLTMODE_GCSBLOCK)
+        if not step(f'décollage à {TAKEOFF_ALT} m', test.attendre(test.en_vol, 150)):
             return 1
         time.sleep(3.0)
         test.set_mode('releve')
@@ -245,6 +247,7 @@ def main():
         test.set_mode('attente')
     finally:
         test.atterrir_si_arme()   # test interrompu en vol : ne jamais laisser le drone voler
+        radio.fermer()
         test.fermer()
     return step.fin()
 
